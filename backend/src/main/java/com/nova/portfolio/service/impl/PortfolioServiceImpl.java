@@ -40,6 +40,7 @@ public class PortfolioServiceImpl implements PortfolioService {
             .orElseThrow(() -> new ResourceNotFoundException("Portfolio not found for id: " + id));
         return PortfolioMapper.toResponse(portfolio);
     }
+}
 
     @Override
     public PortfolioResponse update(Long id, PortfolioRequest request) {

@@ -40,6 +40,7 @@ public class StockServiceImpl implements StockService {
             .orElseThrow(() -> new ResourceNotFoundException("Stock not found for id: " + id));
         return StockMapper.toResponse(stock);
     }
+}
 
     @Override
     public StockResponse update(Long id, StockRequest request) {

@@ -34,6 +34,7 @@ public class CashAssetResponse {
     public void setExchangeRate(BigDecimal exchangeRate) {
         this.exchangeRate = exchangeRate;
     }
+}
 
     public LocalDateTime getCreatedAt() {
         return createdAt;

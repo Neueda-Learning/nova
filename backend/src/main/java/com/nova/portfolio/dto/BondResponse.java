@@ -80,6 +80,7 @@ public class BondResponse {
     public void setRiskLevel(String riskLevel) {
         this.riskLevel = riskLevel;
     }
+}
 
     public LocalDateTime getCreatedAt() {
         return createdAt;

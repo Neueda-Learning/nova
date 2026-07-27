@@ -7,6 +7,10 @@ import java.util.List;
 
 public interface BondService {
 
+    List<BondResponse> findAll();
+
+    BondResponse findById(Long id);
+}
     BondResponse create(BondRequest request);
 
     List<BondResponse> findAll();
