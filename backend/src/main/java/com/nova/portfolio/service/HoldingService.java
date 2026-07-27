@@ -11,6 +11,8 @@ public interface HoldingService {
 
     List<HoldingResponse> findAll();
 
+    List<HoldingResponse> findByPortfolioId(Long portfolioId);
+
     HoldingResponse findById(Long id);
 
     HoldingResponse update(Long id, HoldingRequest request);
