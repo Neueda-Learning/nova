@@ -1,0 +1,13 @@
+# Root ignores
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Build output
+**/target/
