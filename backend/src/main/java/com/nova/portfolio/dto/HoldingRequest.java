@@ -1,31 +1,55 @@
 package com.nova.portfolio.dto;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Positive;
+import com.nova.portfolio.model.AssetType;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotNull;
+
+import java.math.BigDecimal;
 
 public class HoldingRequest {
 
-    @NotBlank(message = "stockTicker is required")
-    @Pattern(regexp = "^[A-Za-z.]{1,16}$", message = "stockTicker must be 1-16 letters or dot")
-    private String stockTicker;
+    @NotNull(message = "portfolioId is required")
+    private Long portfolioId;
 
-    @Positive(message = "volume must be > 0")
-    private Integer volume;
+    @NotNull(message = "assetType is required")
+    private AssetType assetType;
 
-    public String getStockTicker() {
-        return stockTicker;
+    @NotNull(message = "assetId is required")
+    private Long assetId;
+
+    @NotNull(message = "quantity is required")
+    @DecimalMin(value = "0.0001", message = "quantity must be >= 0.0001")
+    private BigDecimal quantity;
+
+    public Long getPortfolioId() {
+        return portfolioId;
     }
 
-    public void setStockTicker(String stockTicker) {
-        this.stockTicker = stockTicker;
+    public void setPortfolioId(Long portfolioId) {
+        this.portfolioId = portfolioId;
     }
 
-    public Integer getVolume() {
-        return volume;
+    public AssetType getAssetType() {
+        return assetType;
     }
 
-    public void setVolume(Integer volume) {
-        this.volume = volume;
+    public void setAssetType(AssetType assetType) {
+        this.assetType = assetType;
+    }
+
+    public Long getAssetId() {
+        return assetId;
+    }
+
+    public void setAssetId(Long assetId) {
+        this.assetId = assetId;
+    }
+
+    public BigDecimal getQuantity() {
+        return quantity;
+    }
+
+    public void setQuantity(BigDecimal quantity) {
+        this.quantity = quantity;
     }
 }

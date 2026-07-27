@@ -3,29 +3,38 @@ package com.nova.portfolio.mapper;
 import com.nova.portfolio.dto.HoldingRequest;
 import com.nova.portfolio.dto.HoldingResponse;
 import com.nova.portfolio.model.Holding;
+import com.nova.portfolio.model.Portfolio;
 
 public final class HoldingMapper {
 
     private HoldingMapper() {
     }
 
-    public static Holding toEntity(HoldingRequest request) {
+    public static Holding toEntity(HoldingRequest request, Portfolio portfolio) {
         Holding holding = new Holding();
-        holding.setStockTicker(request.getStockTicker().toUpperCase());
-        holding.setVolume(request.getVolume());
+        holding.setPortfolio(portfolio);
+        holding.setAssetType(request.getAssetType());
+        holding.setAssetId(request.getAssetId());
+        holding.setQuantity(request.getQuantity());
         return holding;
     }
 
-    public static void updateEntity(Holding entity, HoldingRequest request) {
-        entity.setStockTicker(request.getStockTicker().toUpperCase());
-        entity.setVolume(request.getVolume());
+    public static void updateEntity(Holding entity, HoldingRequest request, Portfolio portfolio) {
+        entity.setPortfolio(portfolio);
+        entity.setAssetType(request.getAssetType());
+        entity.setAssetId(request.getAssetId());
+        entity.setQuantity(request.getQuantity());
     }
 
     public static HoldingResponse toResponse(Holding holding) {
         HoldingResponse response = new HoldingResponse();
         response.setId(holding.getId());
-        response.setStockTicker(holding.getStockTicker());
-        response.setVolume(holding.getVolume());
+        response.setPortfolioId(holding.getPortfolio().getId());
+        response.setAssetType(holding.getAssetType());
+        response.setAssetId(holding.getAssetId());
+        response.setQuantity(holding.getQuantity());
+        response.setCreatedAt(holding.getCreatedAt());
+        response.setUpdatedAt(holding.getUpdatedAt());
         return response;
     }
 }
