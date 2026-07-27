@@ -432,12 +432,6 @@ Bitcoin Blockchain
 
 ---
 
-这样设计的好处：
-
-* 数据模型简单
-* 四天容易完成
-* Dashboard展示空间大
-* Neo4j容易体现创新
 * 后续可以再扩展 Portfolio/Holding
 
 目前先围绕这四张资产表开发是合理的。你们项目定位可以改成：
