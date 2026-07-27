@@ -1,12 +1,15 @@
 package com.nova.portfolio.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 public class CashAssetResponse {
 
     private Long id;
     private String currency;
     private BigDecimal exchangeRate;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 
     public Long getId() {
         return id;
@@ -32,3 +35,21 @@ public class CashAssetResponse {
         this.exchangeRate = exchangeRate;
     }
 }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+}
+

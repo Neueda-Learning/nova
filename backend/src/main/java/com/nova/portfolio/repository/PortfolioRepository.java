@@ -4,5 +4,6 @@ import com.nova.portfolio.model.Portfolio;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PortfolioRepository extends JpaRepository<Portfolio, Long> {
-}
 
+    boolean existsByPortfolioName(String portfolioName);
+}

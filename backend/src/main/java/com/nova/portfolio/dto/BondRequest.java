@@ -1,29 +1,43 @@
 package com.nova.portfolio.dto;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
-public class BondResponse {
+public class BondRequest {
 
-    private Long id;
+    @NotBlank(message = "name is required")
+    @Size(max = 128, message = "name must be <= 128 chars")
     private String name;
+
+    @NotBlank(message = "bondType is required")
+    @Size(max = 64, message = "bondType must be <= 64 chars")
     private String bondType;
+
+    @NotBlank(message = "issuer is required")
+    @Size(max = 128, message = "issuer must be <= 128 chars")
     private String issuer;
+
+    @NotNull(message = "interestRate is required")
+    @DecimalMin(value = "0.0000", inclusive = false, message = "interestRate must be > 0")
     private BigDecimal interestRate;
+
+    @NotNull(message = "maturityDate is required")
+    @Future(message = "maturityDate must be in the future")
     private LocalDate maturityDate;
+
+    @NotNull(message = "currentPrice is required")
+    @DecimalMin(value = "0.0000", inclusive = false, message = "currentPrice must be > 0")
     private BigDecimal currentPrice;
+
+    @NotBlank(message = "riskLevel is required")
+    @Size(max = 32, message = "riskLevel must be <= 32 chars")
     private String riskLevel;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
 
     public String getName() {
         return name;
@@ -79,23 +93,6 @@ public class BondResponse {
 
     public void setRiskLevel(String riskLevel) {
         this.riskLevel = riskLevel;
-    }
-}
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public LocalDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
     }
 }
 

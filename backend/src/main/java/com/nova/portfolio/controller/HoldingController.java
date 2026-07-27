@@ -41,6 +41,11 @@ public class HoldingController {
         return holdingService.findAll();
     }
 
+    @GetMapping("/portfolio/{portfolioId}")
+    public List<HoldingResponse> findByPortfolioId(@PathVariable Long portfolioId) {
+        return holdingService.findByPortfolioId(portfolioId);
+    }
+
     @GetMapping("/{id}")
     public HoldingResponse findById(@PathVariable Long id) {
         return holdingService.findById(id);

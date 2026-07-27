@@ -1,5 +1,6 @@
 package com.nova.portfolio.service.impl;
 
+import com.nova.portfolio.dto.BondRequest;
 import com.nova.portfolio.dto.BondResponse;
 import com.nova.portfolio.exception.ResourceNotFoundException;
 import com.nova.portfolio.mapper.BondMapper;
@@ -20,6 +21,12 @@ public class BondServiceImpl implements BondService {
     }
 
     @Override
+    public BondResponse create(BondRequest request) {
+        Bond saved = bondRepository.save(BondMapper.toEntity(request));
+        return BondMapper.toResponse(saved);
+    }
+
+    @Override
     public List<BondResponse> findAll() {
         return bondRepository.findAll().stream().map(BondMapper::toResponse).toList();
     }
@@ -31,3 +38,23 @@ public class BondServiceImpl implements BondService {
         return BondMapper.toResponse(bond);
     }
 }
+
+    @Override
+    public BondResponse update(Long id, BondRequest request) {
+        Bond existing = bondRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Bond not found for id: " + id));
+
+        BondMapper.updateEntity(existing, request);
+        Bond saved = bondRepository.save(existing);
+        return BondMapper.toResponse(saved);
+    }
+
+    @Override
+    public void delete(Long id) {
+        if (!bondRepository.existsById(id)) {
+            throw new ResourceNotFoundException("Bond not found for id: " + id);
+        }
+        bondRepository.deleteById(id);
+    }
+}
+
