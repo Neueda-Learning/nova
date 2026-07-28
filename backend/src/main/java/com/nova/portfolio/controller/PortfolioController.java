@@ -1,8 +1,11 @@
 package com.nova.portfolio.controller;
 
 import com.nova.portfolio.dto.HoldingResponse;
+import com.nova.portfolio.dto.PortfolioDashboardResponse;
 import com.nova.portfolio.dto.PortfolioRequest;
 import com.nova.portfolio.dto.PortfolioResponse;
+import com.nova.portfolio.dto.PortfolioSummaryResponse;
+import com.nova.portfolio.service.PortfolioAnalyticsService;
 import com.nova.portfolio.service.HoldingService;
 import com.nova.portfolio.service.PortfolioService;
 import jakarta.validation.Valid;
@@ -25,10 +28,16 @@ public class PortfolioController {
 
     private final PortfolioService portfolioService;
     private final HoldingService holdingService;
+    private final PortfolioAnalyticsService portfolioAnalyticsService;
 
-    public PortfolioController(PortfolioService portfolioService, HoldingService holdingService) {
+    public PortfolioController(
+        PortfolioService portfolioService,
+        HoldingService holdingService,
+        PortfolioAnalyticsService portfolioAnalyticsService
+    ) {
         this.portfolioService = portfolioService;
         this.holdingService = holdingService;
+        this.portfolioAnalyticsService = portfolioAnalyticsService;
     }
 
     @PostMapping
@@ -49,6 +58,16 @@ public class PortfolioController {
     @GetMapping("/{id}/holdings")
     public List<HoldingResponse> findHoldings(@PathVariable Long id) {
         return holdingService.findByPortfolioId(id);
+    }
+
+    @GetMapping("/dashboard")
+    public PortfolioDashboardResponse dashboard() {
+        return portfolioAnalyticsService.getDashboardSummary();
+    }
+
+    @GetMapping("/{id}/summary")
+    public PortfolioSummaryResponse summary(@PathVariable Long id) {
+        return portfolioAnalyticsService.getPortfolioSummary(id);
     }
 
     @PutMapping("/{id}")

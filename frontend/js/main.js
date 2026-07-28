@@ -171,52 +171,6 @@ function startDashboardRefresh(app) {
   }, 300000);
 }
 
-function enrichHolding(holding) {
-  let assetLabel = `#${holding.assetId}`;
-  let unitPrice = null;
-
-  if (holding.assetType === 'STOCK') {
-    const stock = state.stocks.find((s) => s.id === holding.assetId);
-    if (stock) {
-      assetLabel = `${stock.symbol} - ${stock.name}`;
-      unitPrice = stock.price;
-    }
-  } else if (holding.assetType === 'BOND') {
-    const bond = state.bonds.find((b) => b.id === holding.assetId);
-    if (bond) {
-      assetLabel = `${bond.name} (${bond.issuer})`;
-      unitPrice = bond.currentPrice;
-    }
-  } else if (holding.assetType === 'CASH') {
-    const cash = state.cashAssets.find((c) => c.id === holding.assetId);
-    if (cash) {
-      assetLabel = cash.currency;
-      unitPrice = cash.exchangeRate;
-    }
-  }
-
-  const marketValue = unitPrice !== null ? Number(holding.quantity) * Number(unitPrice) : null;
-  return { ...holding, assetLabel, unitPrice, marketValue };
-}
-
-function buildAllocation(enrichedHoldings) {
-  const totals = { STOCK: 0, BOND: 0, CASH: 0 };
-  enrichedHoldings.forEach((h) => {
-    if (h.marketValue !== null) {
-      totals[h.assetType] = (totals[h.assetType] || 0) + h.marketValue;
-    }
-  });
-  const grandTotal = totals.STOCK + totals.BOND + totals.CASH;
-  return Object.entries(totals)
-    .filter(([, value]) => value > 0)
-    .map(([type, value]) => ({
-      label: type,
-      value,
-      color: ASSET_TYPE_COLORS[type],
-      percent: grandTotal > 0 ? Math.round((value / grandTotal) * 1000) / 10 : 0,
-    }));
-}
-
 function buildDashboardTrend(history) {
   return history
     .map((item) => ({
@@ -227,8 +181,8 @@ function buildDashboardTrend(history) {
 }
 
 function renderHomePortfolioCard(portfolio, index) {
-  const allocation = buildAllocation(portfolio.holdings)
-    .sort((a, b) => Number(b.value) - Number(a.value));
+  const allocation = [...(portfolio.allocation || [])]
+    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
   const topHoldings = [...portfolio.holdings]
     .sort((a, b) => Number(b.marketValue || 0) - Number(a.marketValue || 0))
     .slice(0, 3);
@@ -248,7 +202,7 @@ function renderHomePortfolioCard(portfolio, index) {
         <span class="summary-label">Total assets</span>
         <div class="home-portfolio-value">${formatMoney(portfolio.totalValue)}</div>
         <div class="home-portfolio-submeta">
-          <span>${portfolio.holdings.length} holdings</span>
+          <span>${portfolio.holdingCount ?? portfolio.holdings.length} holdings</span>
           <span>Updated ${formatCompactDate(portfolio.updatedAt || portfolio.createdAt)}</span>
         </div>
       </div>
@@ -278,30 +232,20 @@ function renderHomePortfolioCard(portfolio, index) {
 }
 
 async function loadDashboardData() {
-  const [portfolios, stocks, bonds, cashAssets, holdings] = await Promise.all([
-    PortfolioApi.list(),
-    StockApi.list(),
-    BondApi.list(),
-    CashAssetApi.list(),
-    HoldingApi.list(),
-  ]);
+  const dashboard = await PortfolioApi.dashboard();
+  const portfolios = Array.isArray(dashboard?.portfolios)
+    ? dashboard.portfolios.map((portfolio) => ({
+        ...portfolio,
+        holdings: Array.isArray(portfolio.holdings) ? portfolio.holdings : [],
+        allocation: Array.isArray(portfolio.allocation) ? portfolio.allocation : [],
+      }))
+    : [];
 
-  state.portfolios = portfolios;
-  state.stocks = stocks;
-  state.bonds = bonds;
-  state.cashAssets = cashAssets;
-
-  const enrichedHoldings = holdings.map(enrichHolding);
-  const portfolioRows = portfolios.map((portfolio) => {
-    const portfolioHoldings = enrichedHoldings.filter((holding) => holding.portfolioId === portfolio.id);
-    const totalValue = portfolioHoldings.reduce((sum, holding) => sum + (holding.marketValue || 0), 0);
-    return { ...portfolio, totalValue, holdings: portfolioHoldings };
-  });
-
-  const allocation = buildAllocation(enrichedHoldings);
-  const globalTotal = portfolioRows.reduce((sum, item) => sum + item.totalValue, 0);
-
-  return { portfolios: portfolioRows, allocation, globalTotal };
+  return {
+    portfolios,
+    allocation: Array.isArray(dashboard?.allocation) ? dashboard.allocation : [],
+    globalTotal: Number(dashboard?.globalTotal || 0),
+  };
 }
 
 function appendDashboardSnapshot(history, globalTotal) {
@@ -583,62 +527,12 @@ function bindPortfoliosEvents(app) {
 // Portfolio detail (holdings) view
 // ---------------------------------------------------------------------------
 
-function enrichHolding(holding) {
-  let assetLabel = `#${holding.assetId}`;
-  let unitPrice = null;
-
-  if (holding.assetType === 'STOCK') {
-    const stock = state.stocks.find((s) => s.id === holding.assetId);
-    if (stock) {
-      assetLabel = `${stock.symbol} - ${stock.name}`;
-      unitPrice = stock.price;
-    }
-  } else if (holding.assetType === 'BOND') {
-    const bond = state.bonds.find((b) => b.id === holding.assetId);
-    if (bond) {
-      assetLabel = `${bond.name} (${bond.issuer})`;
-      unitPrice = bond.currentPrice;
-    }
-  } else if (holding.assetType === 'CASH') {
-    const cash = state.cashAssets.find((c) => c.id === holding.assetId);
-    if (cash) {
-      assetLabel = cash.currency;
-      unitPrice = cash.exchangeRate;
-    }
-  }
-
-  const marketValue = unitPrice !== null ? Number(holding.quantity) * Number(unitPrice) : null;
-  const averageCost = holding.averageCost !== null && holding.averageCost !== undefined ? Number(holding.averageCost) : null;
-  const unrealizedPnl = (marketValue !== null && averageCost !== null)
-    ? marketValue - averageCost * Number(holding.quantity)
-    : null;
-  return { ...holding, assetLabel, unitPrice, marketValue, averageCost, unrealizedPnl };
-}
-
-function buildAllocation(enrichedHoldings) {
-  const totals = { STOCK: 0, BOND: 0, CASH: 0 };
-  enrichedHoldings.forEach((h) => {
-    if (h.marketValue !== null) {
-      totals[h.assetType] = (totals[h.assetType] || 0) + h.marketValue;
-    }
-  });
-  const grandTotal = totals.STOCK + totals.BOND + totals.CASH;
-  return Object.entries(totals)
-    .filter(([, value]) => value > 0)
-    .map(([type, value]) => ({
-      label: type,
-      value,
-      color: ASSET_TYPE_COLORS[type],
-      percent: grandTotal > 0 ? Math.round((value / grandTotal) * 1000) / 10 : 0,
-    }));
-}
 
 async function renderPortfolioDetailView(app, portfolioId) {
   app.innerHTML = renderLoading();
 
-  const [portfolio, holdings, stocks, bonds, cashAssets] = await Promise.all([
-    PortfolioApi.get(portfolioId),
-    PortfolioApi.holdings(portfolioId),
+  const [portfolioSummary, stocks, bonds, cashAssets] = await Promise.all([
+    PortfolioApi.summary(portfolioId),
     StockApi.list(),
     BondApi.list(),
     CashAssetApi.list(),
@@ -648,11 +542,12 @@ async function renderPortfolioDetailView(app, portfolioId) {
   state.bonds = bonds;
   state.cashAssets = cashAssets;
 
-  const enriched = holdings.map(enrichHolding);
-  const totalValue = enriched.reduce((sum, h) => sum + (h.marketValue || 0), 0);
-  const totalPnl = enriched.reduce((sum, h) => sum + (h.unrealizedPnl || 0), 0);
-  const hasPnlData = enriched.some((h) => h.unrealizedPnl !== null);
-  const allocation = buildAllocation(enriched);
+  const portfolio = portfolioSummary;
+  const enriched = Array.isArray(portfolioSummary.holdings) ? portfolioSummary.holdings : [];
+  const totalValue = Number(portfolioSummary.totalValue || 0);
+  const totalPnl = Number(portfolioSummary.totalPnl || 0);
+  const hasPnlData = Boolean(portfolioSummary.hasPnlData);
+  const allocation = Array.isArray(portfolioSummary.allocation) ? portfolioSummary.allocation : [];
   const hasAnyAsset = stocks.length + bonds.length + cashAssets.length > 0;
 
   app.innerHTML = `

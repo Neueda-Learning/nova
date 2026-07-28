@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -40,8 +41,20 @@ class ApiCreateFlowIntegrationTest {
         createBond("US10Y-" + suffix);
         Long cashAssetId = createCashAsset("USD" + suffix);
 
-        createHolding(portfolioId, AssetType.STOCK, stockId, new BigDecimal("10.5000"));
-        createHolding(portfolioId, AssetType.CASH, cashAssetId, new BigDecimal("1000.0000"));
+        createHolding(portfolioId, AssetType.STOCK, stockId, new BigDecimal("10.5000"), new BigDecimal("180.0000"));
+        createHolding(portfolioId, AssetType.CASH, cashAssetId, new BigDecimal("1000.0000"), new BigDecimal("1.0000"));
+
+        mockMvc.perform(get("/api/portfolios/{id}/summary", portfolioId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(portfolioId))
+            .andExpect(jsonPath("$.holdingCount").value(2))
+            .andExpect(jsonPath("$.holdings[0].assetLabel").isString())
+            .andExpect(jsonPath("$.allocation[0].label").isString());
+
+        mockMvc.perform(get("/api/portfolios/dashboard"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.globalTotal").isNumber())
+            .andExpect(jsonPath("$.portfolios[0].id").isNumber());
     }
 
     private Long createPortfolio(String portfolioName) throws Exception {
@@ -118,12 +131,19 @@ class ApiCreateFlowIntegrationTest {
         return objectMapper.readTree(response).get("id").asLong();
     }
 
-    private void createHolding(Long portfolioId, AssetType assetType, Long assetId, BigDecimal quantity) throws Exception {
+    private void createHolding(
+        Long portfolioId,
+        AssetType assetType,
+        Long assetId,
+        BigDecimal quantity,
+        BigDecimal averageCost
+    ) throws Exception {
         Map<String, Object> payload = new HashMap<>();
         payload.put("portfolioId", portfolioId);
         payload.put("assetType", assetType.name());
         payload.put("assetId", assetId);
         payload.put("quantity", quantity);
+        payload.put("averageCost", averageCost);
 
         mockMvc.perform(post("/api/holdings")
                 .contentType(MediaType.APPLICATION_JSON)
