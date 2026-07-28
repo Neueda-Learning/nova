@@ -61,7 +61,6 @@ public class StockResponse {
     public void setPrice(BigDecimal price) {
         this.price = price;
     }
-}
 
     public LocalDateTime getCreatedAt() {
         return createdAt;

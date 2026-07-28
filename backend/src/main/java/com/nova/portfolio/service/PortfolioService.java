@@ -7,10 +7,6 @@ import java.util.List;
 
 public interface PortfolioService {
 
-    List<PortfolioResponse> findAll();
-
-    PortfolioResponse findById(Long id);
-}
     PortfolioResponse create(PortfolioRequest request);
 
     List<PortfolioResponse> findAll();

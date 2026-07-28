@@ -7,10 +7,6 @@ import java.util.List;
 
 public interface StockService {
 
-    List<StockResponse> findAll();
-
-    StockResponse findById(Long id);
-}
     StockResponse create(StockRequest request);
 
     List<StockResponse> findAll();

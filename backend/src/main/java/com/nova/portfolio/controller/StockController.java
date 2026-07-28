@@ -1,9 +1,5 @@
 package com.nova.portfolio.controller;
 
-import com.nova.portfolio.dto.StockResponse;
-import com.nova.portfolio.service.StockService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import com.nova.portfolio.dto.StockRequest;
 import com.nova.portfolio.dto.StockResponse;
 import com.nova.portfolio.service.StockService;
@@ -45,7 +41,6 @@ public class StockController {
     public StockResponse findById(@PathVariable Long id) {
         return stockService.findById(id);
     }
-}
 
     @PutMapping("/{id}")
     public StockResponse update(@PathVariable Long id, @Valid @RequestBody StockRequest request) {

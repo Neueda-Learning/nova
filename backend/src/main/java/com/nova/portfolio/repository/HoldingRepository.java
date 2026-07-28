@@ -10,5 +10,9 @@ public interface HoldingRepository extends JpaRepository<Holding, Long> {
 
     boolean existsByPortfolioIdAndAssetTypeAndAssetId(Long portfolioId, AssetType assetType, Long assetId);
 
+    boolean existsByAssetTypeAndAssetId(AssetType assetType, Long assetId);
+
     List<Holding> findByPortfolioId(Long portfolioId);
+
+    void deleteByPortfolioId(Long portfolioId);
 }

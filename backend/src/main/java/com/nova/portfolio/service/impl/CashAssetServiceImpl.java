@@ -4,8 +4,10 @@ import com.nova.portfolio.dto.CashAssetRequest;
 import com.nova.portfolio.dto.CashAssetResponse;
 import com.nova.portfolio.exception.ResourceNotFoundException;
 import com.nova.portfolio.mapper.CashAssetMapper;
+import com.nova.portfolio.model.AssetType;
 import com.nova.portfolio.model.CashAsset;
 import com.nova.portfolio.repository.CashAssetRepository;
+import com.nova.portfolio.repository.HoldingRepository;
 import com.nova.portfolio.service.CashAssetService;
 import org.springframework.stereotype.Service;
 
@@ -15,9 +17,11 @@ import java.util.List;
 public class CashAssetServiceImpl implements CashAssetService {
 
     private final CashAssetRepository cashAssetRepository;
+    private final HoldingRepository holdingRepository;
 
-    public CashAssetServiceImpl(CashAssetRepository cashAssetRepository) {
+    public CashAssetServiceImpl(CashAssetRepository cashAssetRepository, HoldingRepository holdingRepository) {
         this.cashAssetRepository = cashAssetRepository;
+        this.holdingRepository = holdingRepository;
     }
 
     @Override
@@ -61,6 +65,9 @@ public class CashAssetServiceImpl implements CashAssetService {
     public void delete(Long id) {
         if (!cashAssetRepository.existsById(id)) {
             throw new ResourceNotFoundException("Cash asset not found for id: " + id);
+        }
+        if (holdingRepository.existsByAssetTypeAndAssetId(AssetType.CASH, id)) {
+            throw new IllegalArgumentException("Cannot delete cash asset: it is referenced by existing holdings");
         }
         cashAssetRepository.deleteById(id);
     }
