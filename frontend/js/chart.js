@@ -53,6 +53,91 @@ function drawAllocationChart(canvas, slices) {
   drawPieChart(canvas, slices);
 }
 
+function drawBarChart(canvas, bars) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+
+  if (!bars || bars.length === 0) {
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('No sector data available', width / 2, height / 2);
+    return;
+  }
+
+  const padding = { top: 20, right: 20, bottom: 52, left: 64 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const maxValue = Math.max(...bars.map((b) => b.value), 0);
+  const barCount = bars.length;
+  const gap = 10;
+  const barWidth = Math.max(14, (chartWidth - gap * (barCount + 1)) / barCount);
+
+  // Axes
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding.left, padding.top);
+  ctx.lineTo(padding.left, height - padding.bottom);
+  ctx.lineTo(width - padding.right, height - padding.bottom);
+  ctx.stroke();
+
+  // Y-axis grid + labels
+  const gridLines = 4;
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i <= gridLines; i += 1) {
+    const y = padding.top + (chartHeight / gridLines) * i;
+    const value = maxValue - (maxValue / gridLines) * i;
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(width - padding.right, y);
+    ctx.stroke();
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(value.toLocaleString(undefined, { maximumFractionDigits: 0 }), padding.left - 8, y);
+  }
+
+  // Bars
+  bars.forEach((bar, i) => {
+    const x = padding.left + gap + i * (barWidth + gap);
+    const barH = maxValue > 0 ? (bar.value / maxValue) * chartHeight : 0;
+    const y = padding.top + chartHeight - barH;
+
+    ctx.fillStyle = bar.color || '#2563eb';
+    ctx.fillRect(x, y, barWidth, barH);
+
+    // Value label on top of bar
+    if (barH > 20) {
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText(bar.value.toLocaleString(undefined, { maximumFractionDigits: 0 }), x + barWidth / 2, y + 5);
+    }
+
+    // X-axis label (rotated for readability)
+    const label = bar.label.length > 14 ? bar.label.slice(0, 12) + '…' : bar.label;
+    ctx.save();
+    ctx.translate(x + barWidth / 2, height - padding.bottom + 8);
+    ctx.rotate(-Math.PI / 5);
+    ctx.fillStyle = '#64748b';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  });
+}
+
 function drawLineChart(canvas, points) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -66,7 +151,7 @@ function drawLineChart(canvas, points) {
     return;
   }
 
-  const padding = { top: 16, right: 18, bottom: 26, left: 48 };
+  const padding = { top: 18, right: 24, bottom: 48, left: 64 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   const entries = points.map((point) => ({
@@ -76,21 +161,24 @@ function drawLineChart(canvas, points) {
   })).filter((entry) => Number.isFinite(entry.ts));
   if (entries.length === 0) return;
 
+  const axisY = height - padding.bottom;
   const values = entries.map((entry) => entry.value);
   const min = 0;
-  const max = Math.max(...values, 0);
+  const rawMax = Math.max(...values, 0);
+  const max = rawMax <= 0 ? 1 : Math.ceil(rawMax * 1.08);
   const range = max - min || 1;
   const minTs = Math.min(...entries.map((entry) => entry.ts));
   const maxTs = Math.max(...entries.map((entry) => entry.ts));
   const minHour = 3600000;
   const tsRange = Math.max(maxTs - minTs, minHour);
+  const useDayLabels = tsRange >= 86400000;
 
   ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(padding.left, padding.top);
-  ctx.lineTo(padding.left, height - padding.bottom);
-  ctx.lineTo(width - padding.right, height - padding.bottom);
+  ctx.lineTo(padding.left, axisY);
+  ctx.lineTo(width - padding.right, axisY);
   ctx.stroke();
 
   const gridLines = 4;
@@ -117,6 +205,21 @@ function drawLineChart(canvas, points) {
     return { x, y, point: entry };
   });
 
+  const areaGradient = ctx.createLinearGradient(0, padding.top, 0, axisY);
+  areaGradient.addColorStop(0, 'rgba(37, 99, 235, 0.22)');
+  areaGradient.addColorStop(1, 'rgba(37, 99, 235, 0.02)');
+
+  ctx.beginPath();
+  coords.forEach((coord, index) => {
+    if (index === 0) ctx.moveTo(coord.x, coord.y);
+    else ctx.lineTo(coord.x, coord.y);
+  });
+  ctx.lineTo(coords[coords.length - 1].x, axisY);
+  ctx.lineTo(coords[0].x, axisY);
+  ctx.closePath();
+  ctx.fillStyle = areaGradient;
+  ctx.fill();
+
   ctx.strokeStyle = '#2563eb';
   ctx.lineWidth = 2.5;
   ctx.beginPath();
@@ -138,13 +241,11 @@ function drawLineChart(canvas, points) {
     ctx.textBaseline = 'top';
     coords.forEach((coord, index) => {
       ctx.fillStyle = '#64748b';
-      const hourLabel = new Date(coord.point.ts).toLocaleString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-      });
+      const label = new Date(coord.point.ts).toLocaleString(undefined, useDayLabels
+        ? { month: 'short', day: 'numeric' }
+        : { month: 'short', day: 'numeric', hour: '2-digit' });
       if (index === 0 || index === coords.length - 1 || index % Math.max(1, Math.ceil(coords.length / 6)) === 0) {
-        ctx.fillText(hourLabel, coord.x, height - padding.bottom + 6);
+        ctx.fillText(label, coord.x, axisY + 12);
       }
     });
   }

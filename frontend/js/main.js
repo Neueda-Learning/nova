@@ -39,6 +39,22 @@ function formatMoney(value) {
   return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 }
 
+function toTenths(value, min = 0.1) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return '';
+  return Math.max(min, Math.round(num * 10) / 10).toFixed(1);
+}
+
+function bindTenthsInput(input, min = 0.1) {
+  if (!input) return;
+  input.step = '0.1';
+  input.min = String(min);
+  input.addEventListener('blur', () => {
+    if (input.value === '') return;
+    input.value = toTenths(input.value, min);
+  });
+}
+
 function emptyState(message) {
   return `<div class="empty-state">${escapeHtml(message)}</div>`;
 }
@@ -196,6 +212,57 @@ function buildDashboardTrend(history) {
     .sort((a, b) => new Date(a.label) - new Date(b.label));
 }
 
+function renderHomePortfolioCard(portfolio, index) {
+  const allocation = buildAllocation(portfolio.holdings)
+    .sort((a, b) => Number(b.value) - Number(a.value));
+  const topHoldings = [...portfolio.holdings]
+    .sort((a, b) => Number(b.marketValue || 0) - Number(a.marketValue || 0))
+    .slice(0, 3);
+  const dominantAllocation = allocation[0];
+
+  return `
+    <article class="home-portfolio-card">
+      <div class="home-portfolio-card-top">
+        <div>
+          <span class="home-portfolio-rank">#${index + 1}</span>
+          <h3>${escapeHtml(portfolio.portfolioName)}</h3>
+        </div>
+        <a class="btn btn-sm" href="#/portfolios/${portfolio.id}">${buttonLabel('folder2-open', 'Open')}</a>
+      </div>
+
+      <div class="home-portfolio-value-block">
+        <span class="summary-label">Total assets</span>
+        <div class="home-portfolio-value">${formatMoney(portfolio.totalValue)}</div>
+        <div class="home-portfolio-submeta">
+          <span>${portfolio.holdings.length} holdings</span>
+          <span>Updated ${formatCompactDate(portfolio.updatedAt || portfolio.createdAt)}</span>
+        </div>
+      </div>
+
+      <div class="home-portfolio-body">
+        <div class="home-portfolio-section">
+          <span class="home-portfolio-section-label">Allocation mix</span>
+          ${allocation.length === 0
+            ? '<div class="home-portfolio-empty">No holdings yet</div>'
+            : `
+              <div class="home-allocation-pills">
+                ${allocation.map((slice) => `<span class="home-allocation-pill" style="--pill-color:${slice.color}">${slice.label} ${slice.percent}%</span>`).join('')}
+              </div>
+              ${dominantAllocation ? `<div class="home-portfolio-dominant">Largest exposure: <strong>${dominantAllocation.label}</strong> (${dominantAllocation.percent}%)</div>` : ''}
+            `}
+        </div>
+
+        <div class="home-portfolio-section">
+          <span class="home-portfolio-section-label">Top holdings</span>
+          ${topHoldings.length === 0
+            ? '<div class="home-portfolio-empty">Add stocks, bonds or cash to see a summary</div>'
+            : `<div class="home-top-holdings">${topHoldings.map((holding) => `<span class="home-holding-chip">${escapeHtml(holding.assetLabel)}</span>`).join('')}</div>`}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 async function loadDashboardData() {
   const [portfolios, stocks, bonds, cashAssets, holdings] = await Promise.all([
     PortfolioApi.list(),
@@ -284,6 +351,9 @@ async function router() {
     } else if (section === 'cash-assets') {
       stopDashboardRefresh();
       await renderCashAssetsView(app);
+    } else if (section === 'graph') {
+      stopDashboardRefresh();
+      await renderGraphView(app);
     } else {
       stopDashboardRefresh();
       app.innerHTML = emptyState('Page not found.');
@@ -338,7 +408,7 @@ async function renderHomeView(app) {
       <article class="card dashboard-card dashboard-card-line">
         <div class="card-heading-row">
           <h2>Fund movement</h2>
-          <span class="card-note">Time axis by day; total assets on the Y axis</span>
+          <span class="card-note">Daily value snapshots with a clearer bottom axis and zero-based Y axis</span>
         </div>
         <canvas id="home-line-chart" width="860" height="280"></canvas>
       </article>
@@ -358,26 +428,11 @@ async function renderHomeView(app) {
     <section class="card dashboard-card dashboard-card-wide">
       <div class="card-heading-row">
         <h2>Portfolio list</h2>
-        <span class="card-note">Sorted by current total assets</span>
+        <span class="card-note">Card view ranked by current total assets</span>
       </div>
       ${sortedPortfolios.length === 0 ? emptyState('No portfolios yet. Create one from the Portfolios page.') : `
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Name</th><th>Total assets</th><th>Holdings</th><th>Updated</th><th class="actions-col">Open</th></tr>
-          </thead>
-          <tbody>
-            ${sortedPortfolios.map((portfolio) => `
-              <tr>
-                <td><strong>${escapeHtml(portfolio.portfolioName)}</strong></td>
-                <td>${formatMoney(portfolio.totalValue)}</td>
-                <td>${portfolio.holdings.length}</td>
-                <td>${formatDateTime(portfolio.updatedAt || portfolio.createdAt)}</td>
-                <td class="actions-col"><a class="btn btn-sm" href="#/portfolios/${portfolio.id}">${buttonLabel('folder2-open', 'View')}</a></td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+      <div class="home-portfolio-grid">
+        ${sortedPortfolios.map((portfolio, index) => renderHomePortfolioCard(portfolio, index)).join('')}
       </div>`}
     </section>
   `;
@@ -616,7 +671,7 @@ async function renderPortfolioDetailView(app, portfolioId) {
         </div>
         <div class="form-field">
           <label for="quantity">Quantity</label>
-          <input id="quantity" name="quantity" type="number" step="0.0001" min="0.0001" required placeholder="10" />
+          <input id="quantity" name="quantity" type="number" step="0.1" min="0.1" required placeholder="10.0" />
         </div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" id="holding-submit-btn">${buttonLabel('plus-circle', 'Add Holding')}</button>
@@ -664,6 +719,7 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
   const submitBtn = app.querySelector('#holding-submit-btn');
   const assetTypeSelect = form.elements.assetType;
   const assetIdSelect = form.elements.assetId;
+  bindTenthsInput(form.elements.quantity);
 
   function populateAssetOptions(type, selectedId) {
     if (!type) {
@@ -695,7 +751,7 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
       portfolioId: Number(portfolioId),
       assetType: assetTypeSelect.value,
       assetId: Number(assetIdSelect.value),
-      quantity: Number(form.elements.quantity.value),
+      quantity: Number(toTenths(form.elements.quantity.value)),
     };
     try {
       if (id) {
@@ -723,7 +779,7 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
       form.elements.id.value = holding.id;
       assetTypeSelect.value = holding.assetType;
       populateAssetOptions(holding.assetType, holding.assetId);
-      form.elements.quantity.value = holding.quantity;
+      form.elements.quantity.value = toTenths(holding.quantity);
       setButtonLabel(submitBtn, 'pencil-square', 'Update Holding');
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -781,7 +837,7 @@ async function renderStocksView(app) {
         </div>
         <div class="form-field">
           <label for="price">Price</label>
-          <input id="price" name="price" type="number" step="0.0001" min="0.0001" required placeholder="210.75" />
+          <input id="price" name="price" type="number" step="0.1" min="0.1" required placeholder="210.8" />
         </div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" id="stock-submit-btn">${buttonLabel('plus-circle', 'Create Stock')}</button>
@@ -793,6 +849,9 @@ async function renderStocksView(app) {
     <section class="card">
       <h2>All Stocks (${stocks.length})</h2>
       ${stocks.length === 0 ? emptyState('No stocks yet. Add one above.') : `
+      <div class="table-filter-row">
+        <input type="text" id="stock-search" class="table-search" placeholder="Search by symbol, name, sector or exchange…" />
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -825,6 +884,17 @@ function bindStocksEvents(app) {
   const form = app.querySelector('#stock-form');
   const cancelBtn = app.querySelector('#stock-cancel-btn');
   const submitBtn = app.querySelector('#stock-submit-btn');
+  bindTenthsInput(form.elements.price);
+
+  const searchInput = app.querySelector('#stock-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase();
+      app.querySelectorAll('#stock-form ~ section tbody tr').forEach((row) => {
+        row.style.display = q === '' || row.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+  }
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -834,7 +904,7 @@ function bindStocksEvents(app) {
       name: form.elements.name.value.trim(),
       sector: form.elements.sector.value.trim(),
       exchange: form.elements.exchange.value.trim(),
-      price: Number(form.elements.price.value),
+      price: Number(toTenths(form.elements.price.value)),
     };
     try {
       if (id) {
@@ -861,7 +931,7 @@ function bindStocksEvents(app) {
       form.elements.name.value = stock.name;
       form.elements.sector.value = stock.sector;
       form.elements.exchange.value = stock.exchange;
-      form.elements.price.value = stock.price;
+      form.elements.price.value = toTenths(stock.price);
       setButtonLabel(submitBtn, 'pencil-square', 'Update Stock');
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -915,7 +985,7 @@ async function renderBondsView(app) {
         </div>
         <div class="form-field">
           <label for="interestRate">Interest rate (%)</label>
-          <input id="interestRate" name="interestRate" type="number" step="0.0001" min="0.0001" required placeholder="3.5" />
+          <input id="interestRate" name="interestRate" type="number" step="0.1" min="0.1" required placeholder="3.5" />
         </div>
         <div class="form-field">
           <label for="maturityDate">Maturity date</label>
@@ -923,7 +993,7 @@ async function renderBondsView(app) {
         </div>
         <div class="form-field">
           <label for="currentPrice">Current price</label>
-          <input id="currentPrice" name="currentPrice" type="number" step="0.0001" min="0.0001" required placeholder="99.5" />
+          <input id="currentPrice" name="currentPrice" type="number" step="0.1" min="0.1" required placeholder="99.5" />
         </div>
         <div class="form-field">
           <label for="riskLevel">Risk level</label>
@@ -981,6 +1051,8 @@ function bindBondsEvents(app) {
   const form = app.querySelector('#bond-form');
   const cancelBtn = app.querySelector('#bond-cancel-btn');
   const submitBtn = app.querySelector('#bond-submit-btn');
+  bindTenthsInput(form.elements.interestRate);
+  bindTenthsInput(form.elements.currentPrice);
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -989,9 +1061,9 @@ function bindBondsEvents(app) {
       name: form.elements.name.value.trim(),
       bondType: form.elements.bondType.value.trim(),
       issuer: form.elements.issuer.value.trim(),
-      interestRate: Number(form.elements.interestRate.value),
+      interestRate: Number(toTenths(form.elements.interestRate.value)),
       maturityDate: form.elements.maturityDate.value,
-      currentPrice: Number(form.elements.currentPrice.value),
+      currentPrice: Number(toTenths(form.elements.currentPrice.value)),
       riskLevel: form.elements.riskLevel.value,
     };
     try {
@@ -1018,9 +1090,9 @@ function bindBondsEvents(app) {
       form.elements.name.value = bond.name;
       form.elements.bondType.value = bond.bondType;
       form.elements.issuer.value = bond.issuer;
-      form.elements.interestRate.value = bond.interestRate;
+      form.elements.interestRate.value = toTenths(bond.interestRate);
       form.elements.maturityDate.value = bond.maturityDate;
-      form.elements.currentPrice.value = bond.currentPrice;
+      form.elements.currentPrice.value = toTenths(bond.currentPrice);
       form.elements.riskLevel.value = bond.riskLevel;
       setButtonLabel(submitBtn, 'pencil-square', 'Update Bond');
       cancelBtn.classList.remove('hidden');
@@ -1067,7 +1139,7 @@ async function renderCashAssetsView(app) {
         </div>
         <div class="form-field">
           <label for="exchangeRate">Exchange rate</label>
-          <input id="exchangeRate" name="exchangeRate" type="number" step="0.000001" min="0.000001" required placeholder="1.0" />
+          <input id="exchangeRate" name="exchangeRate" type="number" step="0.1" min="0.1" required placeholder="1.0" />
         </div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" id="cash-submit-btn">${buttonLabel('plus-circle', 'Create Cash Asset')}</button>
@@ -1108,13 +1180,14 @@ function bindCashAssetsEvents(app) {
   const form = app.querySelector('#cash-form');
   const cancelBtn = app.querySelector('#cash-cancel-btn');
   const submitBtn = app.querySelector('#cash-submit-btn');
+  bindTenthsInput(form.elements.exchangeRate);
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const id = form.elements.id.value;
     const payload = {
       currency: form.elements.currency.value.trim().toUpperCase(),
-      exchangeRate: Number(form.elements.exchangeRate.value),
+      exchangeRate: Number(toTenths(form.elements.exchangeRate.value)),
     };
     try {
       if (id) {
@@ -1138,7 +1211,7 @@ function bindCashAssetsEvents(app) {
       if (!cash) return;
       form.elements.id.value = cash.id;
       form.elements.currency.value = cash.currency;
-      form.elements.exchangeRate.value = cash.exchangeRate;
+      form.elements.exchangeRate.value = toTenths(cash.exchangeRate);
       setButtonLabel(submitBtn, 'pencil-square', 'Update Cash Asset');
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1157,4 +1230,369 @@ function bindCashAssetsEvents(app) {
       }
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// Graph view (D3.js v7 force-directed relationship visualization)
+// ---------------------------------------------------------------------------
+
+async function renderGraphView(app) {
+  app.innerHTML = renderLoading();
+
+  try {
+    const [portfolios, holdings, stocks, bonds, cashAssets] = await Promise.all([
+      PortfolioApi.list(),
+      HoldingApi.list(),
+      StockApi.list(),
+      BondApi.list(),
+      CashAssetApi.list(),
+    ]);
+
+    const nodes = [];
+    const links = [];
+    const sectorSet = new Set();
+    const exchangeSet = new Set();
+
+    portfolios.forEach((p) => {
+      nodes.push({ id: `p${p.id}`, label: p.portfolioName, group: 'portfolio', meta: p });
+    });
+
+    stocks.forEach((s) => {
+      nodes.push({ id: `s${s.id}`, label: s.symbol, group: 'stock', meta: s });
+      if (s.sector && !sectorSet.has(s.sector)) {
+        sectorSet.add(s.sector);
+        nodes.push({ id: `sec_${s.sector}`, label: s.sector, group: 'sector', meta: { sector: s.sector } });
+      }
+      if (s.exchange && !exchangeSet.has(s.exchange)) {
+        exchangeSet.add(s.exchange);
+        nodes.push({ id: `ex_${s.exchange}`, label: s.exchange, group: 'exchange', meta: { exchange: s.exchange } });
+      }
+      links.push({ source: `s${s.id}`, target: `sec_${s.sector}`, type: 'BELONGS_TO' });
+      links.push({ source: `s${s.id}`, target: `ex_${s.exchange}`, type: 'LISTED_ON' });
+    });
+
+    bonds.forEach((b) => {
+      const shortLabel = b.name.length > 18 ? b.name.slice(0, 16) + '\u2026' : b.name;
+      nodes.push({ id: `b${b.id}`, label: shortLabel, group: 'bond', meta: b });
+    });
+
+    cashAssets.forEach((c) => {
+      nodes.push({ id: `c${c.id}`, label: c.currency, group: 'cash', meta: c });
+    });
+
+    holdings.forEach((h) => {
+      let target;
+      if (h.assetType === 'STOCK') target = `s${h.assetId}`;
+      else if (h.assetType === 'BOND') target = `b${h.assetId}`;
+      else if (h.assetType === 'CASH') target = `c${h.assetId}`;
+      if (target) links.push({ source: `p${h.portfolioId}`, target, type: 'HAS', quantity: h.quantity });
+    });
+
+    const hasData = nodes.length > 0;
+
+    // ── Render HTML shell ────────────────────────────────────────────────────
+    app.innerHTML = `
+      <div class="page-header">
+        <h1>Graph</h1>
+        <p class="subtitle">D3.js force-directed relationship graph &mdash; hover to highlight neighbours, drag to reposition.</p>
+      </div>
+
+      <section class="card graph-controls-card">
+        <div class="graph-controls-row">
+          <div class="graph-legend">
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-portfolio"></span>Portfolio</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-stock"></span>Stock</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-bond"></span>Bond</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-cash"></span>Cash</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-sector"></span>Sector</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-exchange"></span>Exchange</span>
+            <span class="graph-legend-item graph-legend-hint">&mdash; Solid: HAS &nbsp;&middot;&nbsp; - - Dashed: BELONGS_TO / LISTED_ON</span>
+          </div>
+          <div class="graph-right-controls">
+            <span class="graph-stat">${nodes.length} nodes &nbsp;&middot;&nbsp; ${links.length} edges</span>
+          </div>
+        </div>
+        <div class="graph-filter-row">
+          <span class="graph-filter-label">Show:</span>
+          <button class="graph-filter-btn active" data-group="portfolio">Portfolio</button>
+          <button class="graph-filter-btn active" data-group="stock">Stock</button>
+          <button class="graph-filter-btn active" data-group="bond">Bond</button>
+          <button class="graph-filter-btn active" data-group="cash">Cash</button>
+          <button class="graph-filter-btn active" data-group="sector">Sector</button>
+          <button class="graph-filter-btn active" data-group="exchange">Exchange</button>
+        </div>
+      </section>
+
+      <section class="card" style="padding:0;overflow:hidden;">
+        ${hasData ? `
+          <div id="graph-container" class="graph-container">
+            <div class="graph-zoom-controls">
+              <button id="graph-zoom-in"  class="graph-zoom-btn" title="Zoom in">+</button>
+              <button id="graph-zoom-out" class="graph-zoom-btn" title="Zoom out">&minus;</button>
+              <button id="graph-fit-btn"  class="graph-zoom-btn graph-zoom-fit" title="Reset zoom">&#x2B1C;</button>
+            </div>
+          </div>
+        ` : emptyState('No data to visualize. Add portfolios, assets and holdings first.')}
+      </section>
+    `;
+
+    if (!hasData) return;
+
+    if (typeof d3 === 'undefined') {
+      showToast('D3.js library not loaded', 'error');
+      return;
+    }
+
+    // ── D3 Setup ─────────────────────────────────────────────────────────────
+    const container = document.getElementById('graph-container');
+    const W = container.clientWidth || 900;
+    const H = 620;
+
+    // ── Premium dark-canvas colour palette ──────────────────────────────────
+    const GROUP_CFG = {
+      portfolio: { fill: '#6366f1', stroke: '#818cf8', r: 0,  shape: 'rect',     fs: 13, fw: '700', ls: '0.02em' },
+      stock:     { fill: '#f59e0b', stroke: '#fcd34d', r: 26, shape: 'circle',   fs: 12, fw: '700', ls: '0.06em' },
+      bond:      { fill: '#a855f7', stroke: '#c084fc', r: 24, shape: 'circle',   fs: 11, fw: '600', ls: '0.03em' },
+      cash:      { fill: '#10b981', stroke: '#6ee7b7', r: 24, shape: 'circle',   fs: 12, fw: '700', ls: '0.04em' },
+      sector:    { fill: '#1e3a5f', stroke: '#3b82f6', r: 22, shape: 'diamond',  fs: 10, fw: '500', ls: '0.02em' },
+      exchange:  { fill: '#134e4a', stroke: '#2dd4bf', r: 22, shape: 'triangle', fs: 10, fw: '500', ls: '0.02em' },
+    };
+    const LINK_COLOR = { HAS: '#818cf8', BELONGS_TO: '#334155', LISTED_ON: '#0e7490' };
+
+    function nodeRadius(d) {
+      const c = GROUP_CFG[d.group];
+      if (c.shape === 'rect') return 34;
+      if (c.shape === 'diamond' || c.shape === 'triangle') return c.r * 1.6;
+      return c.r;
+    }
+
+    // ── SVG ───────────────────────────────────────────────────────────────────
+    const svg = d3.select(container).append('svg')
+      .attr('width', W).attr('height', H).style('display', 'block');
+
+    // Defs: arrowheads + glow filter
+    const defs = svg.append('defs');
+    ['HAS', 'BELONGS_TO', 'LISTED_ON'].forEach((type) => {
+      defs.append('marker')
+        .attr('id', `arr-${type}`).attr('viewBox', '0 -5 10 10')
+        .attr('refX', 10).attr('refY', 0).attr('markerWidth', 6).attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', LINK_COLOR[type]);
+    });
+    const glowF = defs.append('filter').attr('id', 'node-glow')
+      .attr('x', '-40%').attr('y', '-40%').attr('width', '180%').attr('height', '180%');
+    glowF.append('feGaussianBlur').attr('in', 'SourceGraphic').attr('stdDeviation', '5').attr('result', 'blur');
+    const fm = glowF.append('feMerge');
+    fm.append('feMergeNode').attr('in', 'blur');
+    fm.append('feMergeNode').attr('in', 'SourceGraphic');
+
+    // ── Zoom (wheel disabled — use buttons instead) ──────────────────────────
+    const zoomLayer = svg.append('g');
+    const zoomBeh = d3.zoom()
+      .scaleExtent([0.1, 6])
+      .filter((event) => event.type !== 'wheel')   // disable scroll-to-zoom
+      .on('zoom', (ev) => zoomLayer.attr('transform', ev.transform));
+    svg.call(zoomBeh).on('dblclick.zoom', null);
+
+    // ── Simulation ───────────────────────────────────────────────────────────
+    const sim = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).id((d) => d.id).distance((l) => l.type === 'HAS' ? 150 : 120))
+      .force('charge', d3.forceManyBody().strength((d) => d.group === 'portfolio' ? -700 : -300))
+      .force('center', d3.forceCenter(W / 2, H / 2))
+      .force('collision', d3.forceCollide((d) => nodeRadius(d) + 20));
+
+    // ── Links ─────────────────────────────────────────────────────────────────
+    const linkSel = zoomLayer.append('g').selectAll('line').data(links).join('line')
+      .attr('stroke', (l) => LINK_COLOR[l.type])
+      .attr('stroke-width', (l) => l.type === 'HAS' ? 2.5 : 1.5)
+      .attr('stroke-dasharray', (l) => l.type !== 'HAS' ? '6,3' : null)
+      .attr('stroke-opacity', 0.6)
+      .attr('marker-end', (l) => `url(#arr-${l.type})`);
+
+    // Edge labels (faint on dark bg, brighten on hover)
+    const edgeLblSel = zoomLayer.append('g').selectAll('text').data(links).join('text')
+      .attr('text-anchor', 'middle').attr('font-size', 9).attr('font-family', 'inherit')
+      .attr('fill', '#475569').attr('letter-spacing', '0.04em').attr('pointer-events', 'none')
+      .text((l) => l.type);
+
+    // ── Nodes ─────────────────────────────────────────────────────────────────
+    const nodeSel = zoomLayer.append('g').selectAll('g').data(nodes).join('g')
+      .style('cursor', 'grab')
+      .call(d3.drag()
+        .on('start', (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+        .on('drag',  (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+        .on('end',   (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+    // Draw shape
+    nodeSel.each(function (d) {
+      const g = d3.select(this);
+      const c = GROUP_CFG[d.group];
+      if (c.shape === 'rect') {
+        g.append('rect').attr('width', 112).attr('height', 40)
+          .attr('x', -56).attr('y', -20).attr('rx', 9)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2.5);
+      } else if (c.shape === 'circle') {
+        g.append('circle').attr('r', c.r)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2.5);
+      } else if (c.shape === 'diamond') {
+        const s = c.r * 1.55;
+        g.append('polygon').attr('points', `0,${-s} ${s},0 0,${s} ${-s},0`)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2);
+      } else if (c.shape === 'triangle') {
+        const s = c.r * 1.55;
+        g.append('polygon').attr('points', `0,${-s} ${s * 0.9},${s * 0.75} ${-s * 0.9},${s * 0.75}`)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2);
+      }
+    });
+
+    // Node labels — all white/light on dark canvas
+    nodeSel.append('text').attr('pointer-events', 'none').attr('text-anchor', 'middle')
+      .attr('font-family', 'inherit')
+      .attr('dy', (d) => {
+        const c = GROUP_CFG[d.group];
+        if (c.shape === 'rect') return '0.38em';
+        if (c.shape === 'circle') return c.r + 16;
+        return c.r * 1.7 + 14;
+      })
+      .attr('font-size', (d) => GROUP_CFG[d.group].fs)
+      .attr('font-weight', (d) => GROUP_CFG[d.group].fw)
+      .attr('letter-spacing', (d) => GROUP_CFG[d.group].ls)
+      .attr('fill', (d) => {
+        const c = GROUP_CFG[d.group];
+        if (c.shape === 'rect') return '#ffffff';
+        if (d.group === 'sector') return '#93c5fd';     // light-blue on dark-blue diamond
+        if (d.group === 'exchange') return '#5eead4';   // light-teal on dark-teal triangle
+        return '#f1f5f9';                               // off-white for all circle labels
+      })
+      .text((d) => d.label);
+
+    // ── Tooltip ───────────────────────────────────────────────────────────────
+    const tooltip = d3.select(container).append('div').attr('class', 'graph-tooltip')
+      .style('display', 'none');
+
+    function buildTip(d) {
+      const m = d.meta || {};
+      if (d.group === 'portfolio')
+        return `<div class="tt-title">${escapeHtml(m.portfolioName)}</div><div class="tt-sub">Portfolio</div>`;
+      if (d.group === 'stock')
+        return `<div class="tt-title">${escapeHtml(m.symbol)}</div>
+                <div class="tt-row">${escapeHtml(m.name)}</div>
+                <div class="tt-row">Sector: <b>${escapeHtml(m.sector)}</b></div>
+                <div class="tt-row">Exchange: <b>${escapeHtml(m.exchange)}</b></div>
+                <div class="tt-row">Price: <b>$${formatMoney(m.price)}</b></div>`;
+      if (d.group === 'bond')
+        return `<div class="tt-title">${escapeHtml(m.name)}</div>
+                <div class="tt-row">Issuer: <b>${escapeHtml(m.issuer)}</b></div>
+                <div class="tt-row">Type: <b>${escapeHtml(m.bondType)}</b></div>
+                <div class="tt-row">Rate: <b>${m.interestRate}%</b></div>
+                <div class="tt-row">Risk: <b>${escapeHtml(m.riskLevel)}</b></div>`;
+      if (d.group === 'cash')
+        return `<div class="tt-title">${escapeHtml(m.currency)}</div>
+                <div class="tt-row">Exchange rate: <b>${m.exchangeRate}</b></div>`;
+      if (d.group === 'sector')
+        return `<div class="tt-title">${escapeHtml(m.sector)}</div><div class="tt-sub">Sector</div>`;
+      if (d.group === 'exchange')
+        return `<div class="tt-title">${escapeHtml(m.exchange)}</div><div class="tt-sub">Exchange</div>`;
+      return '';
+    }
+
+    nodeSel
+      .on('mouseover.tip', (ev, d) => tooltip.html(buildTip(d)).style('display', 'block'))
+      .on('mousemove.tip', (ev) => tooltip.style('left', (ev.offsetX + 16) + 'px').style('top', (ev.offsetY - 14) + 'px'))
+      .on('mouseleave.tip', () => tooltip.style('display', 'none'));
+
+    // ── Neighbour highlight ───────────────────────────────────────────────────
+    nodeSel
+      .on('mouseover.hl', (ev, d) => {
+        const conn = new Set([d.id]);
+        links.forEach((l) => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source;
+          const t = typeof l.target === 'object' ? l.target.id : l.target;
+          if (s === d.id) conn.add(t);
+          if (t === d.id) conn.add(s);
+        });
+        nodeSel.attr('opacity', (n) => conn.has(n.id) ? 1 : 0.1);
+        linkSel.attr('stroke-opacity', (l) => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source;
+          const t = typeof l.target === 'object' ? l.target.id : l.target;
+          return (s === d.id || t === d.id) ? 1 : 0.04;
+        });
+        edgeLblSel.attr('opacity', (l) => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source;
+          const t = typeof l.target === 'object' ? l.target.id : l.target;
+          return (s === d.id || t === d.id) ? 1 : 0;
+        });
+        // glow on hovered node
+        d3.select(ev.currentTarget).select('circle,rect,polygon').attr('filter', 'url(#node-glow)');
+      })
+      .on('mouseleave.hl', (ev) => {
+        nodeSel.attr('opacity', 1);
+        linkSel.attr('stroke-opacity', 0.6);
+        edgeLblSel.attr('opacity', 1);
+        d3.select(ev.currentTarget).select('circle,rect,polygon').attr('filter', null);
+      });
+
+    // ── Tick ─────────────────────────────────────────────────────────────────
+    sim.on('tick', () => {
+      linkSel
+        .attr('x1', (l) => l.source.x).attr('y1', (l) => l.source.y)
+        .attr('x2', (l) => {
+          const r = nodeRadius(l.target);
+          const dx = l.target.x - l.source.x, dy = l.target.y - l.source.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          return l.target.x - (dx / dist) * (r + 5);
+        })
+        .attr('y2', (l) => {
+          const r = nodeRadius(l.target);
+          const dx = l.target.x - l.source.x, dy = l.target.y - l.source.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          return l.target.y - (dy / dist) * (r + 5);
+        });
+
+      edgeLblSel
+        .attr('x', (l) => (l.source.x + l.target.x) / 2)
+        .attr('y', (l) => (l.source.y + l.target.y) / 2);
+
+      nodeSel.attr('transform', (d) => `translate(${d.x},${d.y})`);
+    });
+
+    // ── Filter buttons ────────────────────────────────────────────────────────
+    const visible = new Set(['portfolio', 'stock', 'bond', 'cash', 'sector', 'exchange']);
+
+    function applyVisibility() {
+      nodeSel.style('display', (d) => visible.has(d.group) ? null : 'none');
+      const isVisible = (l) => {
+        const sg = typeof l.source === 'object' ? l.source.group : (nodes.find((n) => n.id === l.source) || {}).group;
+        const tg = typeof l.target === 'object' ? l.target.group : (nodes.find((n) => n.id === l.target) || {}).group;
+        return visible.has(sg) && visible.has(tg);
+      };
+      linkSel.style('display', (l) => isVisible(l) ? null : 'none');
+      edgeLblSel.style('display', (l) => isVisible(l) ? null : 'none');
+    }
+
+    app.querySelectorAll('.graph-filter-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const grp = btn.dataset.group;
+        if (visible.has(grp)) { visible.delete(grp); btn.classList.remove('active'); }
+        else { visible.add(grp); btn.classList.add('active'); }
+        applyVisibility();
+      });
+    });
+
+    // ── Reset zoom button ─────────────────────────────────────────────────────
+    document.getElementById('graph-zoom-in').addEventListener('click', () => {
+      svg.transition().duration(280).call(zoomBeh.scaleBy, 1.5);
+    });
+    document.getElementById('graph-zoom-out').addEventListener('click', () => {
+      svg.transition().duration(280).call(zoomBeh.scaleBy, 1 / 1.5);
+    });
+    document.getElementById('graph-fit-btn').addEventListener('click', () => {
+      svg.transition().duration(500).call(zoomBeh.transform, d3.zoomIdentity);
+    });
+
+  } catch (err) {
+    console.error(err);
+    app.innerHTML = emptyState('Failed to load graph data. See console for details.');
+    showToast(err.message || 'Graph load failed', 'error');
+  }
 }

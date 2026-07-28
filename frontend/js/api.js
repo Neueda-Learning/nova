@@ -88,3 +88,4 @@ const HoldingApi = {
   update: (id, payload) => apiRequest(`/holdings/${id}`, { method: 'PUT', body: payload }),
   remove: (id) => apiRequest(`/holdings/${id}`, { method: 'DELETE' }),
 };
+
