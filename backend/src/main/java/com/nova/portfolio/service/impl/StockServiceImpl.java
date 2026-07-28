@@ -4,7 +4,9 @@ import com.nova.portfolio.dto.StockRequest;
 import com.nova.portfolio.dto.StockResponse;
 import com.nova.portfolio.exception.ResourceNotFoundException;
 import com.nova.portfolio.mapper.StockMapper;
+import com.nova.portfolio.model.AssetType;
 import com.nova.portfolio.model.Stock;
+import com.nova.portfolio.repository.HoldingRepository;
 import com.nova.portfolio.repository.StockRepository;
 import com.nova.portfolio.service.StockService;
 import org.springframework.stereotype.Service;
@@ -15,9 +17,11 @@ import java.util.List;
 public class StockServiceImpl implements StockService {
 
     private final StockRepository stockRepository;
+    private final HoldingRepository holdingRepository;
 
-    public StockServiceImpl(StockRepository stockRepository) {
+    public StockServiceImpl(StockRepository stockRepository, HoldingRepository holdingRepository) {
         this.stockRepository = stockRepository;
+        this.holdingRepository = holdingRepository;
     }
 
     @Override
@@ -40,7 +44,6 @@ public class StockServiceImpl implements StockService {
             .orElseThrow(() -> new ResourceNotFoundException("Stock not found for id: " + id));
         return StockMapper.toResponse(stock);
     }
-}
 
     @Override
     public StockResponse update(Long id, StockRequest request) {
@@ -62,6 +65,9 @@ public class StockServiceImpl implements StockService {
     public void delete(Long id) {
         if (!stockRepository.existsById(id)) {
             throw new ResourceNotFoundException("Stock not found for id: " + id);
+        }
+        if (holdingRepository.existsByAssetTypeAndAssetId(AssetType.STOCK, id)) {
+            throw new IllegalArgumentException("Cannot delete stock: it is referenced by existing holdings");
         }
         stockRepository.deleteById(id);
     }

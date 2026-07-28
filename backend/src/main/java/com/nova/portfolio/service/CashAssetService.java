@@ -7,10 +7,6 @@ import java.util.List;
 
 public interface CashAssetService {
 
-    List<CashAssetResponse> findAll();
-
-    CashAssetResponse findById(Long id);
-}
     CashAssetResponse create(CashAssetRequest request);
 
     List<CashAssetResponse> findAll();

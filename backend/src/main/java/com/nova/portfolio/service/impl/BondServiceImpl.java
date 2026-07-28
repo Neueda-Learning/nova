@@ -4,8 +4,10 @@ import com.nova.portfolio.dto.BondRequest;
 import com.nova.portfolio.dto.BondResponse;
 import com.nova.portfolio.exception.ResourceNotFoundException;
 import com.nova.portfolio.mapper.BondMapper;
+import com.nova.portfolio.model.AssetType;
 import com.nova.portfolio.model.Bond;
 import com.nova.portfolio.repository.BondRepository;
+import com.nova.portfolio.repository.HoldingRepository;
 import com.nova.portfolio.service.BondService;
 import org.springframework.stereotype.Service;
 
@@ -15,9 +17,11 @@ import java.util.List;
 public class BondServiceImpl implements BondService {
 
     private final BondRepository bondRepository;
+    private final HoldingRepository holdingRepository;
 
-    public BondServiceImpl(BondRepository bondRepository) {
+    public BondServiceImpl(BondRepository bondRepository, HoldingRepository holdingRepository) {
         this.bondRepository = bondRepository;
+        this.holdingRepository = holdingRepository;
     }
 
     @Override
@@ -37,7 +41,6 @@ public class BondServiceImpl implements BondService {
             .orElseThrow(() -> new ResourceNotFoundException("Bond not found for id: " + id));
         return BondMapper.toResponse(bond);
     }
-}
 
     @Override
     public BondResponse update(Long id, BondRequest request) {
@@ -53,6 +56,9 @@ public class BondServiceImpl implements BondService {
     public void delete(Long id) {
         if (!bondRepository.existsById(id)) {
             throw new ResourceNotFoundException("Bond not found for id: " + id);
+        }
+        if (holdingRepository.existsByAssetTypeAndAssetId(AssetType.BOND, id)) {
+            throw new IllegalArgumentException("Cannot delete bond: it is referenced by existing holdings");
         }
         bondRepository.deleteById(id);
     }
