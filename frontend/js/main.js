@@ -1120,8 +1120,14 @@ function bindBondsEvents(app) {
 
 async function renderCashAssetsView(app) {
   app.innerHTML = renderLoading();
-  const cashAssets = await CashAssetApi.list();
+  const [cashAssets, currencyMap] = await Promise.all([
+    CashAssetApi.list(),
+    CashAssetApi.currencies().catch(() => ({})),
+  ]);
   state.cashAssets = cashAssets;
+
+  const sortedCurrencies = Object.entries(currencyMap)
+    .sort(([a], [b]) => a.localeCompare(b));
 
   app.innerHTML = `
     <div class="page-header">
@@ -1134,12 +1140,27 @@ async function renderCashAssetsView(app) {
       <form id="cash-form" class="form-grid">
         <input type="hidden" name="id" />
         <div class="form-field">
-          <label for="currency">Currency code</label>
-          <input id="currency" name="currency" type="text" maxlength="16" required placeholder="USD" />
+          <label for="currency">Currency</label>
+          <input id="currency" name="currency" type="text" maxlength="3"
+            required placeholder="Type code e.g. EUR"
+            autocomplete="off" list="currency-list"
+            style="text-transform:uppercase" />
+          <datalist id="currency-list">
+            ${sortedCurrencies.map(([code, name]) =>
+              `<option value="${code}">${escapeHtml(name)}</option>`
+            ).join('')}
+          </datalist>
+          <span id="currency-name" class="field-hint"></span>
         </div>
         <div class="form-field">
-          <label for="exchangeRate">Exchange rate</label>
-          <input id="exchangeRate" name="exchangeRate" type="number" step="0.1" min="0.1" required placeholder="1.0" />
+          <label for="exchangeRate">
+            Exchange rate
+            <span id="rate-hint" class="field-hint" style="margin-left:6px"></span>
+          </label>
+          <input id="exchangeRate" name="exchangeRate" type="number" step="0.000001" min="0.000001" required placeholder="e.g. 0.9234" />
+          <button type="button" id="fetch-rate-btn" class="btn btn-sm btn-secondary" style="margin-top:4px">
+            <i class="fas fa-sync-alt"></i> Auto-fill rate
+          </button>
         </div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" id="cash-submit-btn">${buttonLabel('plus-circle', 'Create Cash Asset')}</button>
@@ -1154,12 +1175,15 @@ async function renderCashAssetsView(app) {
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Currency</th><th>Exchange rate</th><th class="actions-col">Actions</th></tr>
+            <tr><th>Currency</th><th>Exchange rate (per 1 USD)</th><th class="actions-col">Actions</th></tr>
           </thead>
           <tbody>
             ${cashAssets.map((c) => `
               <tr>
-                <td><span class="badge badge-cash">${escapeHtml(c.currency)}</span></td>
+                <td>
+                  <span class="badge badge-cash">${escapeHtml(c.currency)}</span>
+                  ${currencyMap[c.currency] ? `<span class="text-muted" style="font-size:0.85em;margin-left:6px">${escapeHtml(currencyMap[c.currency])}</span>` : ''}
+                </td>
                 <td>${formatMoney(c.exchangeRate)}</td>
                 <td class="actions-col">
                   <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${c.id}">${buttonLabel('pencil-square', 'Edit')}</button>
@@ -1173,21 +1197,62 @@ async function renderCashAssetsView(app) {
     </section>
   `;
 
-  bindCashAssetsEvents(app);
+  bindCashAssetsEvents(app, currencyMap);
 }
 
-function bindCashAssetsEvents(app) {
+function bindCashAssetsEvents(app, currencyMap = {}) {
   const form = app.querySelector('#cash-form');
   const cancelBtn = app.querySelector('#cash-cancel-btn');
   const submitBtn = app.querySelector('#cash-submit-btn');
-  bindTenthsInput(form.elements.exchangeRate);
+  const currencyInput = form.elements.currency;
+  const rateInput = form.elements.exchangeRate;
+  const currencyNameEl = app.querySelector('#currency-name');
+  const rateHintEl = app.querySelector('#rate-hint');
+  const fetchRateBtn = app.querySelector('#fetch-rate-btn');
+
+  function updateCurrencyName() {
+    const code = currencyInput.value.trim().toUpperCase();
+    currencyNameEl.textContent = currencyMap[code] ? currencyMap[code] : '';
+  }
+  currencyInput.addEventListener('input', updateCurrencyName);
+
+  async function fetchAndFillRate() {
+    const code = currencyInput.value.trim().toUpperCase();
+    if (code.length !== 3) { showToast('Enter a 3-letter currency code first', 'error'); return; }
+    fetchRateBtn.disabled = true;
+    fetchRateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading…';
+    try {
+      const data = await CashAssetApi.rate(code);
+      if (data.rate !== null && data.rate !== undefined) {
+        rateInput.value = Number(data.rate).toFixed(6);
+        rateHintEl.textContent = `1 ${data.base} = ${data.rate} ${code}`;
+        showToast(`Rate loaded: 1 USD = ${data.rate} ${code}`);
+      } else {
+        showToast(`No rate found for ${code}`, 'error');
+      }
+    } catch (err) {
+      showToast('Failed to fetch rate: ' + err.message, 'error');
+    } finally {
+      fetchRateBtn.disabled = false;
+      fetchRateBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Auto-fill rate';
+    }
+  }
+
+  fetchRateBtn.addEventListener('click', fetchAndFillRate);
+
+  currencyInput.addEventListener('change', () => {
+    const code = currencyInput.value.trim().toUpperCase();
+    currencyInput.value = code;
+    updateCurrencyName();
+    if (code.length === 3 && !form.elements.id.value) fetchAndFillRate();
+  });
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const id = form.elements.id.value;
     const payload = {
-      currency: form.elements.currency.value.trim().toUpperCase(),
-      exchangeRate: Number(toTenths(form.elements.exchangeRate.value)),
+      currency: currencyInput.value.trim().toUpperCase(),
+      exchangeRate: Number(rateInput.value),
     };
     try {
       if (id) {
@@ -1203,15 +1268,21 @@ function bindCashAssetsEvents(app) {
     }
   });
 
-  cancelBtn.addEventListener('click', () => resetForm(form, submitBtn, cancelBtn, 'plus-circle', 'Create Cash Asset'));
+  cancelBtn.addEventListener('click', () => {
+    resetForm(form, submitBtn, cancelBtn, 'plus-circle', 'Create Cash Asset');
+    currencyNameEl.textContent = '';
+    rateHintEl.textContent = '';
+  });
 
   app.querySelectorAll('button[data-action="edit"]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const cash = state.cashAssets.find((c) => String(c.id) === btn.dataset.id);
       if (!cash) return;
       form.elements.id.value = cash.id;
-      form.elements.currency.value = cash.currency;
-      form.elements.exchangeRate.value = toTenths(cash.exchangeRate);
+      currencyInput.value = cash.currency;
+      rateInput.value = cash.exchangeRate;
+      updateCurrencyName();
+      rateHintEl.textContent = `1 USD = ${cash.exchangeRate} ${cash.currency}`;
       setButtonLabel(submitBtn, 'pencil-square', 'Update Cash Asset');
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });

@@ -77,6 +77,10 @@ const CashAssetApi = {
   create: (payload) => apiRequest('/cash-assets', { method: 'POST', body: payload }),
   update: (id, payload) => apiRequest(`/cash-assets/${id}`, { method: 'PUT', body: payload }),
   remove: (id) => apiRequest(`/cash-assets/${id}`, { method: 'DELETE' }),
+  /** Returns { "USD": "United States Dollar", ... } */
+  currencies: () => apiRequest('/cash-assets/currencies'),
+  /** Returns { currency, rate, base } for a single currency code */
+  rate: (currency) => apiRequest(`/cash-assets/rate?currency=${encodeURIComponent(currency)}`),
 };
 
 const HoldingApi = {
