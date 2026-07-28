@@ -15,6 +15,20 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(OpenExchangeRatesException.class)
+    public ResponseEntity<ApiError> handleOxr(OpenExchangeRatesException ex, HttpServletRequest request) {
+        HttpStatus status = switch (ex.getStatusCode()) {
+            case 401 -> HttpStatus.UNAUTHORIZED;
+            case 403 -> HttpStatus.FORBIDDEN;
+            case 429 -> HttpStatus.TOO_MANY_REQUESTS;
+            case 502 -> HttpStatus.BAD_GATEWAY;
+            default  -> HttpStatus.INTERNAL_SERVER_ERROR;
+        };
+        ApiError error = new ApiError(Instant.now(), status.value(), status.getReasonPhrase(),
+                ex.getMessage(), request.getRequestURI());
+        return ResponseEntity.status(status).body(error);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
         ApiError error = new ApiError(
