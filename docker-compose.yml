@@ -5,9 +5,9 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: portfolio_db
-      MYSQL_USER: portfolio_user
-      MYSQL_PASSWORD: portfolio_pass
-      MYSQL_ROOT_PASSWORD: root_pass
+      MYSQL_USER: nova_member
+      MYSQL_PASSWORD: 12345678
+      MYSQL_ROOT_PASSWORD: 87654321
     ports:
       - "3306:3306"
     volumes:

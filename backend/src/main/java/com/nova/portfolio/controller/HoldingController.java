@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -33,8 +34,16 @@ public class HoldingController {
     }
 
     @GetMapping
-    public List<HoldingResponse> findAll() {
+    public List<HoldingResponse> findAll(@RequestParam(required = false) Long portfolioId) {
+        if (portfolioId != null) {
+            return holdingService.findByPortfolioId(portfolioId);
+        }
         return holdingService.findAll();
+    }
+
+    @GetMapping("/portfolio/{portfolioId}")
+    public List<HoldingResponse> findByPortfolioId(@PathVariable Long portfolioId) {
+        return holdingService.findByPortfolioId(portfolioId);
     }
 
     @GetMapping("/{id}")
