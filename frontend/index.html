@@ -4,32 +4,63 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Nova Portfolio Manager</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="topbar-inner">
-      <a class="brand" href="#/portfolios">Nova Portfolio Manager</a>
-      <nav class="nav">
-        <a href="#/portfolios" data-route="portfolios">Portfolios</a>
-        <a href="#/stocks" data-route="stocks">Stocks</a>
-        <a href="#/bonds" data-route="bonds">Bonds</a>
-        <a href="#/cash-assets" data-route="cash-assets">Cash Assets</a>
-        <a href="#/transactions" data-route="transactions">Transactions</a>
+      <a class="brand" href="#/home">
+        <i class="fas fa-chart-pie brand-icon"></i>
+        <span class="brand-text">Nova Portfolio</span>
+      </a>
+      <nav class="nav topbar-nav">
+        <a href="#/home" data-route="home">
+          <i class="fas fa-house nav-icon"></i>
+          <span class="nav-label">Home</span>
+        </a>
+        <a href="#/portfolios" data-route="portfolios">
+          <i class="fas fa-briefcase nav-icon"></i>
+          <span class="nav-label">Portfolios</span>
+        </a>
+        <a href="#/stocks" data-route="stocks">
+          <i class="fas fa-chart-line nav-icon"></i>
+          <span class="nav-label">Stocks</span>
+        </a>
+        <a href="#/bonds" data-route="bonds">
+          <i class="fas fa-file-invoice-dollar nav-icon"></i>
+          <span class="nav-label">Bonds</span>
+        </a>
+        <a href="#/cash-assets" data-route="cash-assets">
+          <i class="fas fa-coins nav-icon"></i>
+          <span class="nav-label">Cash</span>
+        </a>
+        <a href="#/transactions" data-route="transactions">
+          <i class="fas fa-arrow-right-arrow-left nav-icon"></i>
+          <span class="nav-label">Transactions</span>
+        </a>
+        <a href="#/graph" data-route="graph">
+          <i class="fas fa-diagram-project nav-icon"></i>
+          <span class="nav-label">Graph</span>
+        </a>
       </nav>
     </div>
   </header>
 
-  <div id="toast" class="toast"></div>
+  <div class="app-shell">
 
-  <main id="app" class="container">
-    <div class="loading">Loading&hellip;</div>
-  </main>
+    <main id="app" class="container content-area">
+      <div class="loading">Loading&hellip;</div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
 
   <footer class="footer">
     <p>Nova Portfolio Manager &mdash; training project (single user, no authentication)</p>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
   <script src="js/config.js"></script>
   <script src="js/api.js"></script>
   <script src="js/chart.js"></script>

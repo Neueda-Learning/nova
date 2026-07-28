@@ -18,3 +18,8 @@ spring:
 
 server:
   port: 8080
+
+openexchangerates:
+  base-url: https://openexchangerates.org/api
+  app-id: ${OXR_APP_ID:a66ae9ab55ba41cd93d76b34a79dbc4d}
+

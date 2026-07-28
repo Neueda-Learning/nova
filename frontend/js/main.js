@@ -1,12 +1,17 @@
 // Application state, view rendering, and hash-based routing for the Nova Portfolio Manager frontend.
 
 const state = {
+  dashboard: [],
   portfolios: [],
   stocks: [],
   bonds: [],
   cashAssets: [],
   transactions: [],
 };
+
+const DASHBOARD_HISTORY_KEY = 'nova.dashboard.history.v1';
+let dashboardRefreshTimer = null;
+let activeRoute = 'home';
 
 // ---------------------------------------------------------------------------
 // Small utilities
@@ -35,6 +40,22 @@ function formatMoney(value) {
   return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 }
 
+function toTenths(value, min = 0.1) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return '';
+  return Math.max(min, Math.round(num * 10) / 10).toFixed(1);
+}
+
+function bindTenthsInput(input, min = 0.1) {
+  if (!input) return;
+  input.step = '0.1';
+  input.min = String(min);
+  input.addEventListener('blur', () => {
+    if (input.value === '') return;
+    input.value = toTenths(input.value, min);
+  });
+}
+
 function formatSignedMoney(value) {
   const num = Number(value);
   if (Number.isNaN(num)) return '&mdash;';
@@ -52,8 +73,69 @@ function emptyState(message) {
   return `<div class="empty-state">${escapeHtml(message)}</div>`;
 }
 
+const ICON_SVGS = {
+  'plus-circle': '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5v6M5 8h6"></path></svg>',
+  'x-circle': '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"></path></svg>',
+  'pencil-square': '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 2.5h8.5A1.5 1.5 0 0 1 13 4v2"></path><path d="M3 2.5A1.5 1.5 0 0 0 1.5 4v8A1.5 1.5 0 0 0 3 13.5h4"></path><path d="M9.5 12.5l3.8-3.8 1.2 1.2-3.8 3.8H9.5v-1.2z"></path><path d="M8.8 10.2l1 1"></path></svg>',
+  trash: '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2.5 4h11"></path><path d="M6 4V2.8A.8.8 0 0 1 6.8 2h2.4a.8.8 0 0 1 .8.8V4"></path><path d="M5 4.5v8A1.5 1.5 0 0 0 6.5 14h3A1.5 1.5 0 0 0 11 12.5v-8"></path><path d="M7 6.5v4M9 6.5v4"></path></svg>',
+  'folder2-open': '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M1.5 5.5h4l1.2 1.5H14.5a1 1 0 0 1 1 1v4.5a1 1 0 0 1-1 1H1.5a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1z"></path><path d="M1.5 5.5V4A1 1 0 0 1 2.5 3h3.2l1.2 1.5H14a1 1 0 0 1 1 1v1"></path></svg>',
+};
+
+function iconMarkup(name, extraClass = '') {
+  const svg = ICON_SVGS[name] || ICON_SVGS['plus-circle'];
+  const classes = ['btn-icon'];
+  if (extraClass) classes.push(extraClass);
+  return `<span class="${classes.join(' ')}" aria-hidden="true">${svg}</span>`;
+}
+
+function buttonLabel(icon, label) {
+  return `${iconMarkup(icon, 'btn-icon')}<span>${escapeHtml(label)}</span>`;
+}
+
+function setButtonLabel(button, icon, label) {
+  button.innerHTML = buttonLabel(icon, label);
+}
+
 function renderLoading() {
   return '<div class="loading">Loading&hellip;</div>';
+}
+
+function formatCompactDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return escapeHtml(value);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function formatCompactTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return escapeHtml(value);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function loadDashboardHistory() {
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed
+          .filter((item) => item && typeof item.value === 'number')
+          .map((item) => ({
+            ts: item.ts || item.label || new Date().toISOString(),
+            value: Math.max(0, Number(item.value) || 0),
+          }))
+      : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveDashboardHistory(history) {
+  try {
+    window.localStorage.setItem(DASHBOARD_HISTORY_KEY, JSON.stringify(history.slice(-48)));
+  } catch (err) {
+    // ignore storage failures
+  }
 }
 
 let toastTimeoutId;
@@ -67,11 +149,180 @@ function showToast(message, type = 'success') {
   }, 3500);
 }
 
-function resetForm(form, submitBtn, cancelBtn, defaultLabel) {
+function resetForm(form, submitBtn, cancelBtn, defaultIcon, defaultLabel) {
   form.reset();
   form.elements.id.value = '';
-  submitBtn.textContent = defaultLabel;
+  setButtonLabel(submitBtn, defaultIcon, defaultLabel);
   cancelBtn.classList.add('hidden');
+}
+
+function stopDashboardRefresh() {
+  if (dashboardRefreshTimer) {
+    clearInterval(dashboardRefreshTimer);
+    dashboardRefreshTimer = null;
+  }
+}
+
+function startDashboardRefresh(app) {
+  if (dashboardRefreshTimer) return;
+  dashboardRefreshTimer = setInterval(() => {
+    if (activeRoute !== 'home') return;
+    renderHomeView(app).catch((err) => console.error(err));
+  }, 300000);
+}
+
+function enrichHolding(holding) {
+  let assetLabel = `#${holding.assetId}`;
+  let unitPrice = null;
+
+  if (holding.assetType === 'STOCK') {
+    const stock = state.stocks.find((s) => s.id === holding.assetId);
+    if (stock) {
+      assetLabel = `${stock.symbol} - ${stock.name}`;
+      unitPrice = stock.price;
+    }
+  } else if (holding.assetType === 'BOND') {
+    const bond = state.bonds.find((b) => b.id === holding.assetId);
+    if (bond) {
+      assetLabel = `${bond.name} (${bond.issuer})`;
+      unitPrice = bond.currentPrice;
+    }
+  } else if (holding.assetType === 'CASH') {
+    const cash = state.cashAssets.find((c) => c.id === holding.assetId);
+    if (cash) {
+      assetLabel = cash.currency;
+      unitPrice = cash.exchangeRate;
+    }
+  }
+
+  const marketValue = unitPrice !== null ? Number(holding.quantity) * Number(unitPrice) : null;
+  return { ...holding, assetLabel, unitPrice, marketValue };
+}
+
+function buildAllocation(enrichedHoldings) {
+  const totals = { STOCK: 0, BOND: 0, CASH: 0 };
+  enrichedHoldings.forEach((h) => {
+    if (h.marketValue !== null) {
+      totals[h.assetType] = (totals[h.assetType] || 0) + h.marketValue;
+    }
+  });
+  const grandTotal = totals.STOCK + totals.BOND + totals.CASH;
+  return Object.entries(totals)
+    .filter(([, value]) => value > 0)
+    .map(([type, value]) => ({
+      label: type,
+      value,
+      color: ASSET_TYPE_COLORS[type],
+      percent: grandTotal > 0 ? Math.round((value / grandTotal) * 1000) / 10 : 0,
+    }));
+}
+
+function buildDashboardTrend(history) {
+  return history
+    .map((item) => ({
+      label: item.ts,
+      value: Number(item.value) || 0,
+    }))
+    .sort((a, b) => new Date(a.label) - new Date(b.label));
+}
+
+function renderHomePortfolioCard(portfolio, index) {
+  const allocation = buildAllocation(portfolio.holdings)
+    .sort((a, b) => Number(b.value) - Number(a.value));
+  const topHoldings = [...portfolio.holdings]
+    .sort((a, b) => Number(b.marketValue || 0) - Number(a.marketValue || 0))
+    .slice(0, 3);
+  const dominantAllocation = allocation[0];
+
+  return `
+    <article class="home-portfolio-card">
+      <div class="home-portfolio-card-top">
+        <div>
+          <span class="home-portfolio-rank">#${index + 1}</span>
+          <h3>${escapeHtml(portfolio.portfolioName)}</h3>
+        </div>
+        <a class="btn btn-sm" href="#/portfolios/${portfolio.id}">${buttonLabel('folder2-open', 'Open')}</a>
+      </div>
+
+      <div class="home-portfolio-value-block">
+        <span class="summary-label">Total assets</span>
+        <div class="home-portfolio-value">${formatMoney(portfolio.totalValue)}</div>
+        <div class="home-portfolio-submeta">
+          <span>${portfolio.holdings.length} holdings</span>
+          <span>Updated ${formatCompactDate(portfolio.updatedAt || portfolio.createdAt)}</span>
+        </div>
+      </div>
+
+      <div class="home-portfolio-body">
+        <div class="home-portfolio-section">
+          <span class="home-portfolio-section-label">Allocation mix</span>
+          ${allocation.length === 0
+            ? '<div class="home-portfolio-empty">No holdings yet</div>'
+            : `
+              <div class="home-allocation-pills">
+                ${allocation.map((slice) => `<span class="home-allocation-pill" style="--pill-color:${slice.color}">${slice.label} ${slice.percent}%</span>`).join('')}
+              </div>
+              ${dominantAllocation ? `<div class="home-portfolio-dominant">Largest exposure: <strong>${dominantAllocation.label}</strong> (${dominantAllocation.percent}%)</div>` : ''}
+            `}
+        </div>
+
+        <div class="home-portfolio-section">
+          <span class="home-portfolio-section-label">Top holdings</span>
+          ${topHoldings.length === 0
+            ? '<div class="home-portfolio-empty">Add stocks, bonds or cash to see a summary</div>'
+            : `<div class="home-top-holdings">${topHoldings.map((holding) => `<span class="home-holding-chip">${escapeHtml(holding.assetLabel)}</span>`).join('')}</div>`}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+async function loadDashboardData() {
+  const [portfolios, stocks, bonds, cashAssets, holdings] = await Promise.all([
+    PortfolioApi.list(),
+    StockApi.list(),
+    BondApi.list(),
+    CashAssetApi.list(),
+    HoldingApi.list(),
+  ]);
+
+  state.portfolios = portfolios;
+  state.stocks = stocks;
+  state.bonds = bonds;
+  state.cashAssets = cashAssets;
+
+  const enrichedHoldings = holdings.map(enrichHolding);
+  const portfolioRows = portfolios.map((portfolio) => {
+    const portfolioHoldings = enrichedHoldings.filter((holding) => holding.portfolioId === portfolio.id);
+    const totalValue = portfolioHoldings.reduce((sum, holding) => sum + (holding.marketValue || 0), 0);
+    return { ...portfolio, totalValue, holdings: portfolioHoldings };
+  });
+
+  const allocation = buildAllocation(enrichedHoldings);
+  const globalTotal = portfolioRows.reduce((sum, item) => sum + item.totalValue, 0);
+
+  return { portfolios: portfolioRows, allocation, globalTotal };
+}
+
+function appendDashboardSnapshot(history, globalTotal) {
+  const now = new Date();
+  const dayKey = now.toISOString().slice(0, 10);
+  const snapshot = { ts: now.toISOString(), value: Math.max(0, Number(globalTotal) || 0) };
+  const last = history[history.length - 1];
+  if (last && typeof last.ts === 'string' && last.ts.slice(0, 10) === dayKey) {
+    if (Number(last.value) === snapshot.value) {
+      return history;
+    }
+    const nextHistory = [...history.slice(0, -1), snapshot];
+    saveDashboardHistory(nextHistory);
+    return nextHistory;
+  }
+  if (last && Number(last.value) === snapshot.value) {
+    return history;
+  }
+  const nextHistory = [...history, snapshot];
+  saveDashboardHistory(nextHistory);
+  return nextHistory;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +330,7 @@ function resetForm(form, submitBtn, cancelBtn, defaultLabel) {
 // ---------------------------------------------------------------------------
 
 function parseHash() {
-  const hash = window.location.hash.replace(/^#\/?/, '') || 'portfolios';
+  const hash = window.location.hash.replace(/^#\/?/, '') || 'home';
   return hash.split('/').filter(Boolean);
 }
 
@@ -93,22 +344,35 @@ async function router() {
   const parts = parseHash();
   const app = document.getElementById('app');
   const section = parts[0] || 'portfolios';
+  activeRoute = section;
   updateActiveNav(section);
 
   try {
-    if (section === 'portfolios' && parts.length >= 2) {
+    if (section === 'home') {
+      await renderHomeView(app);
+    } else if (section === 'portfolios' && parts.length >= 2) {
+      stopDashboardRefresh();
       await renderPortfolioDetailView(app, parts[1]);
     } else if (section === 'portfolios') {
+      stopDashboardRefresh();
       await renderPortfoliosView(app);
     } else if (section === 'stocks') {
+      stopDashboardRefresh();
       await renderStocksView(app);
     } else if (section === 'bonds') {
+      stopDashboardRefresh();
       await renderBondsView(app);
     } else if (section === 'cash-assets') {
+      stopDashboardRefresh();
       await renderCashAssetsView(app);
+    } else if (section === 'graph') {
+      stopDashboardRefresh();
+      await renderGraphView(app);
     } else if (section === 'transactions') {
+      stopDashboardRefresh();
       await renderTransactionsView(app);
     } else {
+      stopDashboardRefresh();
       app.innerHTML = emptyState('Page not found.');
     }
   } catch (err) {
@@ -120,6 +384,80 @@ async function router() {
 
 window.addEventListener('hashchange', router);
 window.addEventListener('DOMContentLoaded', router);
+
+// ---------------------------------------------------------------------------
+// Home dashboard view
+// ---------------------------------------------------------------------------
+
+async function renderHomeView(app) {
+  app.innerHTML = renderLoading();
+
+  const dashboard = await loadDashboardData();
+  state.dashboard = appendDashboardSnapshot(loadDashboardHistory(), dashboard.globalTotal);
+
+  const sortedPortfolios = [...dashboard.portfolios].sort((a, b) => Number(b.totalValue) - Number(a.totalValue));
+  const chartPoints = buildDashboardTrend(state.dashboard);
+
+  app.innerHTML = `
+    <div class="page-header home-header">
+      <div>
+        <h1>Home</h1>
+        <p class="subtitle">View all portfolios, total assets, fund movement, and overall allocation in one place.</p>
+      </div>
+      <div class="home-meta">
+        <span class="pill">Updated ${formatCompactTime(new Date())}</span>
+        <span class="pill">Auto refresh every 5 minutes</span>
+      </div>
+    </div>
+
+    <section class="summary-grid home-summary">
+      <div class="card summary-card">
+        <span class="summary-label">Portfolios</span>
+        <span class="summary-value">${dashboard.portfolios.length}</span>
+      </div>
+      <div class="card summary-card">
+        <span class="summary-label">Total assets</span>
+        <span class="summary-value">${formatMoney(dashboard.globalTotal)}</span>
+      </div>
+    </section>
+
+    <section class="dashboard-grid dashboard-grid-row">
+      <article class="card dashboard-card dashboard-card-line">
+        <div class="card-heading-row">
+          <h2>Fund movement</h2>
+          <span class="card-note">Daily value snapshots with a clearer bottom axis and zero-based Y axis</span>
+        </div>
+        <canvas id="home-line-chart" width="860" height="280"></canvas>
+      </article>
+
+      <article class="card dashboard-card dashboard-card-pie">
+        <div class="card-heading-row">
+          <h2>Allocation</h2>
+          <span class="card-note">Cash, stock, and bond totals across all portfolios</span>
+        </div>
+        <canvas id="home-pie-chart" width="320" height="280"></canvas>
+        <ul class="legend dashboard-legend">
+          ${dashboard.allocation.length === 0 ? '<li>No allocation data available</li>' : dashboard.allocation.map((slice) => `<li><span class="legend-swatch" style="background:${slice.color}"></span>${slice.label}: ${formatMoney(slice.value)} (${slice.percent}%)</li>`).join('')}
+        </ul>
+      </article>
+    </section>
+
+    <section class="card dashboard-card dashboard-card-wide">
+      <div class="card-heading-row">
+        <h2>Portfolio list</h2>
+        <span class="card-note">Card view ranked by current total assets</span>
+      </div>
+      ${sortedPortfolios.length === 0 ? emptyState('No portfolios yet. Create one from the Portfolios page.') : `
+      <div class="home-portfolio-grid">
+        ${sortedPortfolios.map((portfolio, index) => renderHomePortfolioCard(portfolio, index)).join('')}
+      </div>`}
+    </section>
+  `;
+
+  drawLineChart(document.getElementById('home-line-chart'), chartPoints);
+  drawAllocationChart(document.getElementById('home-pie-chart'), dashboard.allocation);
+  startDashboardRefresh(app);
+}
 
 // ---------------------------------------------------------------------------
 // Portfolios view
@@ -149,8 +487,8 @@ async function renderPortfoliosView(app) {
           <input id="description" name="description" type="text" maxlength="255" placeholder="e.g. Long-term retirement savings" />
         </div>
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary" id="portfolio-submit-btn">Create Portfolio</button>
-          <button type="button" class="btn btn-secondary hidden" id="portfolio-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="portfolio-submit-btn">${buttonLabel('plus-circle', 'Create Portfolio')}</button>
+          <button type="button" class="btn btn-secondary hidden" id="portfolio-cancel-btn">${buttonLabel('x-circle', 'Cancel')}</button>
         </div>
       </form>
     </section>
@@ -171,9 +509,9 @@ async function renderPortfoliosView(app) {
                 <td>${formatDateTime(p.createdAt)}</td>
                 <td>${formatDateTime(p.updatedAt)}</td>
                 <td class="actions-col">
-                  <a class="btn btn-sm" href="#/portfolios/${p.id}">View</a>
-                  <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${p.id}">Edit</button>
-                  <button class="btn btn-sm btn-danger" data-action="delete" data-id="${p.id}">Delete</button>
+                  <a class="btn btn-sm" href="#/portfolios/${p.id}">${buttonLabel('folder2-open', 'View')}</a>
+                  <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${p.id}">${buttonLabel('pencil-square', 'Edit')}</button>
+                  <button class="btn btn-sm btn-danger" data-action="delete" data-id="${p.id}">${buttonLabel('trash', 'Delete')}</button>
                 </td>
               </tr>
             `).join('')}
@@ -212,7 +550,7 @@ function bindPortfoliosEvents(app) {
     }
   });
 
-  cancelBtn.addEventListener('click', () => resetForm(form, submitBtn, cancelBtn, 'Create Portfolio'));
+  cancelBtn.addEventListener('click', () => resetForm(form, submitBtn, cancelBtn, 'plus-circle', 'Create Portfolio'));
 
   app.querySelectorAll('button[data-action="edit"]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -220,8 +558,8 @@ function bindPortfoliosEvents(app) {
       if (!portfolio) return;
       form.elements.id.value = portfolio.id;
       form.elements.portfolioName.value = portfolio.portfolioName;
+      setButtonLabel(submitBtn, 'pencil-square', 'Update Portfolio');
       form.elements.description.value = portfolio.description || '';
-      submitBtn.textContent = 'Update Portfolio';
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -370,15 +708,19 @@ async function renderPortfolioDetailView(app, portfolioId) {
         </div>
         <div class="form-field">
           <label for="quantity">Quantity</label>
-          <input id="quantity" name="quantity" type="number" step="0.0001" min="0.0001" required placeholder="10" />
+          <input id="quantity" name="quantity" type="number" step="0.1" min="0.1" required placeholder="10.0" />
+        </div>
+        <div class="form-field">
+          <label for="averageCost">Average cost (per unit)</label>
+          <input id="averageCost" name="averageCost" type="number" step="0.0001" min="0" required placeholder="150.00" />
         </div>
         <div class="form-field">
           <label for="averageCost">Average cost (per unit)</label>
           <input id="averageCost" name="averageCost" type="number" step="0.0001" min="0" required placeholder="150.00" />
         </div>
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary" id="holding-submit-btn">Add Holding</button>
-          <button type="button" class="btn btn-secondary hidden" id="holding-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="holding-submit-btn">${buttonLabel('plus-circle', 'Add Holding')}</button>
+          <button type="button" class="btn btn-secondary hidden" id="holding-cancel-btn">${buttonLabel('x-circle', 'Cancel')}</button>
         </div>
       </form>
       ${hasAnyAsset ? '' : '<p class="hint">No stocks, bonds or cash assets exist yet. Add some from the Stocks / Bonds / Cash Assets pages first.</p>'}
@@ -404,8 +746,8 @@ async function renderPortfolioDetailView(app, portfolioId) {
                 <td>${h.marketValue !== null ? formatMoney(h.marketValue) : '&mdash;'}</td>
                 <td class="${pnlClass(h.unrealizedPnl)}">${h.unrealizedPnl !== null ? formatSignedMoney(h.unrealizedPnl) : '&mdash;'}</td>
                 <td class="actions-col">
-                  <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${h.id}">Edit</button>
-                  <button class="btn btn-sm btn-danger" data-action="delete" data-id="${h.id}">Remove</button>
+                  <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${h.id}">${buttonLabel('pencil-square', 'Edit')}</button>
+                  <button class="btn btn-sm btn-danger" data-action="delete" data-id="${h.id}">${buttonLabel('trash', 'Remove')}</button>
                 </td>
               </tr>
             `).join('')}
@@ -425,6 +767,7 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
   const submitBtn = app.querySelector('#holding-submit-btn');
   const assetTypeSelect = form.elements.assetType;
   const assetIdSelect = form.elements.assetId;
+  bindTenthsInput(form.elements.quantity);
 
   function populateAssetOptions(type, selectedId) {
     if (!type) {
@@ -456,7 +799,7 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
       portfolioId: Number(portfolioId),
       assetType: assetTypeSelect.value,
       assetId: Number(assetIdSelect.value),
-      quantity: Number(form.elements.quantity.value),
+      quantity: Number(toTenths(form.elements.quantity.value)),
       averageCost: Number(form.elements.averageCost.value),
     };
     try {
@@ -474,7 +817,7 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
   });
 
   cancelBtn.addEventListener('click', () => {
-    resetForm(form, submitBtn, cancelBtn, 'Add Holding');
+    resetForm(form, submitBtn, cancelBtn, 'plus-circle', 'Add Holding');
     populateAssetOptions('');
   });
 
@@ -485,9 +828,9 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
       form.elements.id.value = holding.id;
       assetTypeSelect.value = holding.assetType;
       populateAssetOptions(holding.assetType, holding.assetId);
-      form.elements.quantity.value = holding.quantity;
-      form.elements.averageCost.value = holding.averageCost !== null && holding.averageCost !== undefined ? holding.averageCost : '';
-      submitBtn.textContent = 'Update Holding';
+      form.elements.quantity.value = toTenths(holding.quantity);
+      form.elements.averageCost.value = holding.averageCost !== null && holding.averageCost !== undefined ? holding.averageCost : '';      
+      setButtonLabel(submitBtn, 'pencil-square', 'Update Holding');
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -544,15 +887,15 @@ async function renderStocksView(app) {
         </div>
         <div class="form-field">
           <label for="price">Price</label>
-          <input id="price" name="price" type="number" step="0.0001" min="0.0001" required placeholder="210.75" />
+          <input id="price" name="price" type="number" step="0.1" min="0.1" required placeholder="210.8" />
         </div>
         <div class="form-field">
           <label for="marketCap">Market cap (optional)</label>
           <input id="marketCap" name="marketCap" type="number" step="0.01" min="0" placeholder="3200000000000" />
         </div>
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary" id="stock-submit-btn">Create Stock</button>
-          <button type="button" class="btn btn-secondary hidden" id="stock-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="stock-submit-btn">${buttonLabel('plus-circle', 'Create Stock')}</button>
+          <button type="button" class="btn btn-secondary hidden" id="stock-cancel-btn">${buttonLabel('x-circle', 'Cancel')}</button>
         </div>
       </form>
     </section>
@@ -560,6 +903,9 @@ async function renderStocksView(app) {
     <section class="card">
       <h2>All Stocks (${stocks.length})</h2>
       ${stocks.length === 0 ? emptyState('No stocks yet. Add one above.') : `
+      <div class="table-filter-row">
+        <input type="text" id="stock-search" class="table-search" placeholder="Search by symbol, name, sector or exchange…" />
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -575,8 +921,8 @@ async function renderStocksView(app) {
                 <td>${formatMoney(s.price)}</td>
                 <td>${s.marketCap !== null && s.marketCap !== undefined ? formatMoney(s.marketCap) : '&mdash;'}</td>
                 <td class="actions-col">
-                  <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${s.id}">Edit</button>
-                  <button class="btn btn-sm btn-danger" data-action="delete" data-id="${s.id}">Delete</button>
+                  <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${s.id}">${buttonLabel('pencil-square', 'Edit')}</button>
+                  <button class="btn btn-sm btn-danger" data-action="delete" data-id="${s.id}">${buttonLabel('trash', 'Delete')}</button>
                 </td>
               </tr>
             `).join('')}
@@ -593,6 +939,17 @@ function bindStocksEvents(app) {
   const form = app.querySelector('#stock-form');
   const cancelBtn = app.querySelector('#stock-cancel-btn');
   const submitBtn = app.querySelector('#stock-submit-btn');
+  bindTenthsInput(form.elements.price);
+
+  const searchInput = app.querySelector('#stock-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase();
+      app.querySelectorAll('#stock-form ~ section tbody tr').forEach((row) => {
+        row.style.display = q === '' || row.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+  }
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -602,7 +959,7 @@ function bindStocksEvents(app) {
       name: form.elements.name.value.trim(),
       sector: form.elements.sector.value.trim(),
       exchange: form.elements.exchange.value.trim(),
-      price: Number(form.elements.price.value),
+      price: Number(toTenths(form.elements.price.value)),
       marketCap: form.elements.marketCap.value ? Number(form.elements.marketCap.value) : null,
     };
     try {
@@ -619,7 +976,7 @@ function bindStocksEvents(app) {
     }
   });
 
-  cancelBtn.addEventListener('click', () => resetForm(form, submitBtn, cancelBtn, 'Create Stock'));
+  cancelBtn.addEventListener('click', () => resetForm(form, submitBtn, cancelBtn, 'plus-circle', 'Create Stock'));
 
   app.querySelectorAll('button[data-action="edit"]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -630,9 +987,9 @@ function bindStocksEvents(app) {
       form.elements.name.value = stock.name;
       form.elements.sector.value = stock.sector;
       form.elements.exchange.value = stock.exchange;
-      form.elements.price.value = stock.price;
+      form.elements.price.value = toTenths(stock.price);
       form.elements.marketCap.value = stock.marketCap !== null && stock.marketCap !== undefined ? stock.marketCap : '';
-      submitBtn.textContent = 'Update Stock';
+      setButtonLabel(submitBtn, 'pencil-square', 'Update Stock');
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -685,7 +1042,7 @@ async function renderBondsView(app) {
         </div>
         <div class="form-field">
           <label for="interestRate">Interest rate (%)</label>
-          <input id="interestRate" name="interestRate" type="number" step="0.0001" min="0.0001" required placeholder="3.5" />
+          <input id="interestRate" name="interestRate" type="number" step="0.1" min="0.1" required placeholder="3.5" />
         </div>
         <div class="form-field">
           <label for="maturityDate">Maturity date</label>
@@ -693,7 +1050,7 @@ async function renderBondsView(app) {
         </div>
         <div class="form-field">
           <label for="currentPrice">Current price</label>
-          <input id="currentPrice" name="currentPrice" type="number" step="0.0001" min="0.0001" required placeholder="99.5" />
+          <input id="currentPrice" name="currentPrice" type="number" step="0.1" min="0.1" required placeholder="99.5" />
         </div>
         <div class="form-field">
           <label for="riskLevel">Risk level</label>
@@ -705,8 +1062,8 @@ async function renderBondsView(app) {
           </select>
         </div>
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary" id="bond-submit-btn">Create Bond</button>
-          <button type="button" class="btn btn-secondary hidden" id="bond-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="bond-submit-btn">${buttonLabel('plus-circle', 'Create Bond')}</button>
+          <button type="button" class="btn btn-secondary hidden" id="bond-cancel-btn">${buttonLabel('x-circle', 'Cancel')}</button>
         </div>
       </form>
     </section>
@@ -730,8 +1087,8 @@ async function renderBondsView(app) {
                 <td>${formatMoney(b.currentPrice)}</td>
                 <td><span class="badge badge-risk-${String(b.riskLevel).toLowerCase()}">${escapeHtml(b.riskLevel)}</span></td>
                 <td class="actions-col">
-                  <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${b.id}">Edit</button>
-                  <button class="btn btn-sm btn-danger" data-action="delete" data-id="${b.id}">Delete</button>
+                  <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${b.id}">${buttonLabel('pencil-square', 'Edit')}</button>
+                  <button class="btn btn-sm btn-danger" data-action="delete" data-id="${b.id}">${buttonLabel('trash', 'Delete')}</button>
                 </td>
               </tr>
             `).join('')}
@@ -751,6 +1108,8 @@ function bindBondsEvents(app) {
   const form = app.querySelector('#bond-form');
   const cancelBtn = app.querySelector('#bond-cancel-btn');
   const submitBtn = app.querySelector('#bond-submit-btn');
+  bindTenthsInput(form.elements.interestRate);
+  bindTenthsInput(form.elements.currentPrice);
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -759,9 +1118,9 @@ function bindBondsEvents(app) {
       name: form.elements.name.value.trim(),
       bondType: form.elements.bondType.value.trim(),
       issuer: form.elements.issuer.value.trim(),
-      interestRate: Number(form.elements.interestRate.value),
+      interestRate: Number(toTenths(form.elements.interestRate.value)),
       maturityDate: form.elements.maturityDate.value,
-      currentPrice: Number(form.elements.currentPrice.value),
+      currentPrice: Number(toTenths(form.elements.currentPrice.value)),
       riskLevel: form.elements.riskLevel.value,
     };
     try {
@@ -778,7 +1137,7 @@ function bindBondsEvents(app) {
     }
   });
 
-  cancelBtn.addEventListener('click', () => resetForm(form, submitBtn, cancelBtn, 'Create Bond'));
+  cancelBtn.addEventListener('click', () => resetForm(form, submitBtn, cancelBtn, 'plus-circle', 'Create Bond'));
 
   app.querySelectorAll('button[data-action="edit"]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -788,11 +1147,11 @@ function bindBondsEvents(app) {
       form.elements.name.value = bond.name;
       form.elements.bondType.value = bond.bondType;
       form.elements.issuer.value = bond.issuer;
-      form.elements.interestRate.value = bond.interestRate;
+      form.elements.interestRate.value = toTenths(bond.interestRate);
       form.elements.maturityDate.value = bond.maturityDate;
-      form.elements.currentPrice.value = bond.currentPrice;
+      form.elements.currentPrice.value = toTenths(bond.currentPrice);
       form.elements.riskLevel.value = bond.riskLevel;
-      submitBtn.textContent = 'Update Bond';
+      setButtonLabel(submitBtn, 'pencil-square', 'Update Bond');
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -818,8 +1177,14 @@ function bindBondsEvents(app) {
 
 async function renderCashAssetsView(app) {
   app.innerHTML = renderLoading();
-  const cashAssets = await CashAssetApi.list();
+  const [cashAssets, currencyMap] = await Promise.all([
+    CashAssetApi.list(),
+    CashAssetApi.currencies().catch(() => ({})),
+  ]);
   state.cashAssets = cashAssets;
+
+  const sortedCurrencies = Object.entries(currencyMap)
+    .sort(([a], [b]) => a.localeCompare(b));
 
   app.innerHTML = `
     <div class="page-header">
@@ -832,16 +1197,31 @@ async function renderCashAssetsView(app) {
       <form id="cash-form" class="form-grid">
         <input type="hidden" name="id" />
         <div class="form-field">
-          <label for="currency">Currency code</label>
-          <input id="currency" name="currency" type="text" maxlength="16" required placeholder="USD" />
+          <label for="currency">Currency</label>
+          <input id="currency" name="currency" type="text" maxlength="3"
+            required placeholder="Type code e.g. EUR"
+            autocomplete="off" list="currency-list"
+            style="text-transform:uppercase" />
+          <datalist id="currency-list">
+            ${sortedCurrencies.map(([code, name]) =>
+              `<option value="${code}">${escapeHtml(name)}</option>`
+            ).join('')}
+          </datalist>
+          <span id="currency-name" class="field-hint"></span>
         </div>
         <div class="form-field">
-          <label for="exchangeRate">Exchange rate</label>
-          <input id="exchangeRate" name="exchangeRate" type="number" step="0.000001" min="0.000001" required placeholder="1.0" />
+          <label for="exchangeRate">
+            Exchange rate
+            <span id="rate-hint" class="field-hint" style="margin-left:6px"></span>
+          </label>
+          <input id="exchangeRate" name="exchangeRate" type="number" step="0.000001" min="0.000001" required placeholder="e.g. 0.9234" />
+          <button type="button" id="fetch-rate-btn" class="btn btn-sm btn-secondary" style="margin-top:4px">
+            <i class="fas fa-sync-alt"></i> Auto-fill rate
+          </button>
         </div>
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary" id="cash-submit-btn">Create Cash Asset</button>
-          <button type="button" class="btn btn-secondary hidden" id="cash-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="cash-submit-btn">${buttonLabel('plus-circle', 'Create Cash Asset')}</button>
+          <button type="button" class="btn btn-secondary hidden" id="cash-cancel-btn">${buttonLabel('x-circle', 'Cancel')}</button>
         </div>
       </form>
     </section>
@@ -852,16 +1232,19 @@ async function renderCashAssetsView(app) {
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Currency</th><th>Exchange rate</th><th class="actions-col">Actions</th></tr>
+            <tr><th>Currency</th><th>Exchange rate (per 1 USD)</th><th class="actions-col">Actions</th></tr>
           </thead>
           <tbody>
             ${cashAssets.map((c) => `
               <tr>
-                <td><span class="badge badge-cash">${escapeHtml(c.currency)}</span></td>
+                <td>
+                  <span class="badge badge-cash">${escapeHtml(c.currency)}</span>
+                  ${currencyMap[c.currency] ? `<span class="text-muted" style="font-size:0.85em;margin-left:6px">${escapeHtml(currencyMap[c.currency])}</span>` : ''}
+                </td>
                 <td>${formatMoney(c.exchangeRate)}</td>
                 <td class="actions-col">
-                  <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${c.id}">Edit</button>
-                  <button class="btn btn-sm btn-danger" data-action="delete" data-id="${c.id}">Delete</button>
+                  <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${c.id}">${buttonLabel('pencil-square', 'Edit')}</button>
+                  <button class="btn btn-sm btn-danger" data-action="delete" data-id="${c.id}">${buttonLabel('trash', 'Delete')}</button>
                 </td>
               </tr>
             `).join('')}
@@ -871,20 +1254,62 @@ async function renderCashAssetsView(app) {
     </section>
   `;
 
-  bindCashAssetsEvents(app);
+  bindCashAssetsEvents(app, currencyMap);
 }
 
-function bindCashAssetsEvents(app) {
+function bindCashAssetsEvents(app, currencyMap = {}) {
   const form = app.querySelector('#cash-form');
   const cancelBtn = app.querySelector('#cash-cancel-btn');
   const submitBtn = app.querySelector('#cash-submit-btn');
+  const currencyInput = form.elements.currency;
+  const rateInput = form.elements.exchangeRate;
+  const currencyNameEl = app.querySelector('#currency-name');
+  const rateHintEl = app.querySelector('#rate-hint');
+  const fetchRateBtn = app.querySelector('#fetch-rate-btn');
+
+  function updateCurrencyName() {
+    const code = currencyInput.value.trim().toUpperCase();
+    currencyNameEl.textContent = currencyMap[code] ? currencyMap[code] : '';
+  }
+  currencyInput.addEventListener('input', updateCurrencyName);
+
+  async function fetchAndFillRate() {
+    const code = currencyInput.value.trim().toUpperCase();
+    if (code.length !== 3) { showToast('Enter a 3-letter currency code first', 'error'); return; }
+    fetchRateBtn.disabled = true;
+    fetchRateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading…';
+    try {
+      const data = await CashAssetApi.rate(code);
+      if (data.rate !== null && data.rate !== undefined) {
+        rateInput.value = Number(data.rate).toFixed(6);
+        rateHintEl.textContent = `1 ${data.base} = ${data.rate} ${code}`;
+        showToast(`Rate loaded: 1 USD = ${data.rate} ${code}`);
+      } else {
+        showToast(`No rate found for ${code}`, 'error');
+      }
+    } catch (err) {
+      showToast('Failed to fetch rate: ' + err.message, 'error');
+    } finally {
+      fetchRateBtn.disabled = false;
+      fetchRateBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Auto-fill rate';
+    }
+  }
+
+  fetchRateBtn.addEventListener('click', fetchAndFillRate);
+
+  currencyInput.addEventListener('change', () => {
+    const code = currencyInput.value.trim().toUpperCase();
+    currencyInput.value = code;
+    updateCurrencyName();
+    if (code.length === 3 && !form.elements.id.value) fetchAndFillRate();
+  });
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const id = form.elements.id.value;
     const payload = {
-      currency: form.elements.currency.value.trim().toUpperCase(),
-      exchangeRate: Number(form.elements.exchangeRate.value),
+      currency: currencyInput.value.trim().toUpperCase(),
+      exchangeRate: Number(rateInput.value),
     };
     try {
       if (id) {
@@ -900,16 +1325,22 @@ function bindCashAssetsEvents(app) {
     }
   });
 
-  cancelBtn.addEventListener('click', () => resetForm(form, submitBtn, cancelBtn, 'Create Cash Asset'));
+  cancelBtn.addEventListener('click', () => {
+    resetForm(form, submitBtn, cancelBtn, 'plus-circle', 'Create Cash Asset');
+    currencyNameEl.textContent = '';
+    rateHintEl.textContent = '';
+  });
 
   app.querySelectorAll('button[data-action="edit"]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const cash = state.cashAssets.find((c) => String(c.id) === btn.dataset.id);
       if (!cash) return;
       form.elements.id.value = cash.id;
-      form.elements.currency.value = cash.currency;
-      form.elements.exchangeRate.value = cash.exchangeRate;
-      submitBtn.textContent = 'Update Cash Asset';
+      currencyInput.value = cash.currency;
+      rateInput.value = cash.exchangeRate;
+      updateCurrencyName();
+      rateHintEl.textContent = `1 USD = ${cash.exchangeRate} ${cash.currency}`;
+      setButtonLabel(submitBtn, 'pencil-square', 'Update Cash Asset');
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -1128,3 +1559,368 @@ function bindTransactionsEvents(app) {
   });
 }
 
+
+// ---------------------------------------------------------------------------
+// Graph view (D3.js v7 force-directed relationship visualization)
+// ---------------------------------------------------------------------------
+
+async function renderGraphView(app) {
+  app.innerHTML = renderLoading();
+
+  try {
+    const [portfolios, holdings, stocks, bonds, cashAssets] = await Promise.all([
+      PortfolioApi.list(),
+      HoldingApi.list(),
+      StockApi.list(),
+      BondApi.list(),
+      CashAssetApi.list(),
+    ]);
+
+    const nodes = [];
+    const links = [];
+    const sectorSet = new Set();
+    const exchangeSet = new Set();
+
+    portfolios.forEach((p) => {
+      nodes.push({ id: `p${p.id}`, label: p.portfolioName, group: 'portfolio', meta: p });
+    });
+
+    stocks.forEach((s) => {
+      nodes.push({ id: `s${s.id}`, label: s.symbol, group: 'stock', meta: s });
+      if (s.sector && !sectorSet.has(s.sector)) {
+        sectorSet.add(s.sector);
+        nodes.push({ id: `sec_${s.sector}`, label: s.sector, group: 'sector', meta: { sector: s.sector } });
+      }
+      if (s.exchange && !exchangeSet.has(s.exchange)) {
+        exchangeSet.add(s.exchange);
+        nodes.push({ id: `ex_${s.exchange}`, label: s.exchange, group: 'exchange', meta: { exchange: s.exchange } });
+      }
+      links.push({ source: `s${s.id}`, target: `sec_${s.sector}`, type: 'BELONGS_TO' });
+      links.push({ source: `s${s.id}`, target: `ex_${s.exchange}`, type: 'LISTED_ON' });
+    });
+
+    bonds.forEach((b) => {
+      const shortLabel = b.name.length > 18 ? b.name.slice(0, 16) + '\u2026' : b.name;
+      nodes.push({ id: `b${b.id}`, label: shortLabel, group: 'bond', meta: b });
+    });
+
+    cashAssets.forEach((c) => {
+      nodes.push({ id: `c${c.id}`, label: c.currency, group: 'cash', meta: c });
+    });
+
+    holdings.forEach((h) => {
+      let target;
+      if (h.assetType === 'STOCK') target = `s${h.assetId}`;
+      else if (h.assetType === 'BOND') target = `b${h.assetId}`;
+      else if (h.assetType === 'CASH') target = `c${h.assetId}`;
+      if (target) links.push({ source: `p${h.portfolioId}`, target, type: 'HAS', quantity: h.quantity });
+    });
+
+    const hasData = nodes.length > 0;
+
+    // ── Render HTML shell ────────────────────────────────────────────────────
+    app.innerHTML = `
+      <div class="page-header">
+        <h1>Graph</h1>
+        <p class="subtitle">D3.js force-directed relationship graph &mdash; hover to highlight neighbours, drag to reposition.</p>
+      </div>
+
+      <section class="card graph-controls-card">
+        <div class="graph-controls-row">
+          <div class="graph-legend">
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-portfolio"></span>Portfolio</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-stock"></span>Stock</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-bond"></span>Bond</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-cash"></span>Cash</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-sector"></span>Sector</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-exchange"></span>Exchange</span>
+            <span class="graph-legend-item graph-legend-hint">&mdash; Solid: HAS &nbsp;&middot;&nbsp; - - Dashed: BELONGS_TO / LISTED_ON</span>
+          </div>
+          <div class="graph-right-controls">
+            <span class="graph-stat">${nodes.length} nodes &nbsp;&middot;&nbsp; ${links.length} edges</span>
+          </div>
+        </div>
+        <div class="graph-filter-row">
+          <span class="graph-filter-label">Show:</span>
+          <button class="graph-filter-btn active" data-group="portfolio">Portfolio</button>
+          <button class="graph-filter-btn active" data-group="stock">Stock</button>
+          <button class="graph-filter-btn active" data-group="bond">Bond</button>
+          <button class="graph-filter-btn active" data-group="cash">Cash</button>
+          <button class="graph-filter-btn active" data-group="sector">Sector</button>
+          <button class="graph-filter-btn active" data-group="exchange">Exchange</button>
+        </div>
+      </section>
+
+      <section class="card" style="padding:0;overflow:hidden;">
+        ${hasData ? `
+          <div id="graph-container" class="graph-container">
+            <div class="graph-zoom-controls">
+              <button id="graph-zoom-in"  class="graph-zoom-btn" title="Zoom in">+</button>
+              <button id="graph-zoom-out" class="graph-zoom-btn" title="Zoom out">&minus;</button>
+              <button id="graph-fit-btn"  class="graph-zoom-btn graph-zoom-fit" title="Reset zoom">&#x2B1C;</button>
+            </div>
+          </div>
+        ` : emptyState('No data to visualize. Add portfolios, assets and holdings first.')}
+      </section>
+    `;
+
+    if (!hasData) return;
+
+    if (typeof d3 === 'undefined') {
+      showToast('D3.js library not loaded', 'error');
+      return;
+    }
+
+    // ── D3 Setup ─────────────────────────────────────────────────────────────
+    const container = document.getElementById('graph-container');
+    const W = container.clientWidth || 900;
+    const H = 620;
+
+    // ── Premium dark-canvas colour palette ──────────────────────────────────
+    const GROUP_CFG = {
+      portfolio: { fill: '#6366f1', stroke: '#818cf8', r: 0,  shape: 'rect',     fs: 13, fw: '700', ls: '0.02em' },
+      stock:     { fill: '#f59e0b', stroke: '#fcd34d', r: 26, shape: 'circle',   fs: 12, fw: '700', ls: '0.06em' },
+      bond:      { fill: '#a855f7', stroke: '#c084fc', r: 24, shape: 'circle',   fs: 11, fw: '600', ls: '0.03em' },
+      cash:      { fill: '#10b981', stroke: '#6ee7b7', r: 24, shape: 'circle',   fs: 12, fw: '700', ls: '0.04em' },
+      sector:    { fill: '#1e3a5f', stroke: '#3b82f6', r: 22, shape: 'diamond',  fs: 10, fw: '500', ls: '0.02em' },
+      exchange:  { fill: '#134e4a', stroke: '#2dd4bf', r: 22, shape: 'triangle', fs: 10, fw: '500', ls: '0.02em' },
+    };
+    const LINK_COLOR = { HAS: '#818cf8', BELONGS_TO: '#334155', LISTED_ON: '#0e7490' };
+
+    function nodeRadius(d) {
+      const c = GROUP_CFG[d.group];
+      if (c.shape === 'rect') return 34;
+      if (c.shape === 'diamond' || c.shape === 'triangle') return c.r * 1.6;
+      return c.r;
+    }
+
+    // ── SVG ───────────────────────────────────────────────────────────────────
+    const svg = d3.select(container).append('svg')
+      .attr('width', W).attr('height', H).style('display', 'block');
+
+    // Defs: arrowheads + glow filter
+    const defs = svg.append('defs');
+    ['HAS', 'BELONGS_TO', 'LISTED_ON'].forEach((type) => {
+      defs.append('marker')
+        .attr('id', `arr-${type}`).attr('viewBox', '0 -5 10 10')
+        .attr('refX', 10).attr('refY', 0).attr('markerWidth', 6).attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', LINK_COLOR[type]);
+    });
+    const glowF = defs.append('filter').attr('id', 'node-glow')
+      .attr('x', '-40%').attr('y', '-40%').attr('width', '180%').attr('height', '180%');
+    glowF.append('feGaussianBlur').attr('in', 'SourceGraphic').attr('stdDeviation', '5').attr('result', 'blur');
+    const fm = glowF.append('feMerge');
+    fm.append('feMergeNode').attr('in', 'blur');
+    fm.append('feMergeNode').attr('in', 'SourceGraphic');
+
+    // ── Zoom (wheel disabled — use buttons instead) ──────────────────────────
+    const zoomLayer = svg.append('g');
+    const zoomBeh = d3.zoom()
+      .scaleExtent([0.1, 6])
+      .filter((event) => event.type !== 'wheel')   // disable scroll-to-zoom
+      .on('zoom', (ev) => zoomLayer.attr('transform', ev.transform));
+    svg.call(zoomBeh).on('dblclick.zoom', null);
+
+    // ── Simulation ───────────────────────────────────────────────────────────
+    const sim = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).id((d) => d.id).distance((l) => l.type === 'HAS' ? 150 : 120))
+      .force('charge', d3.forceManyBody().strength((d) => d.group === 'portfolio' ? -700 : -300))
+      .force('center', d3.forceCenter(W / 2, H / 2))
+      .force('collision', d3.forceCollide((d) => nodeRadius(d) + 20));
+
+    // ── Links ─────────────────────────────────────────────────────────────────
+    const linkSel = zoomLayer.append('g').selectAll('line').data(links).join('line')
+      .attr('stroke', (l) => LINK_COLOR[l.type])
+      .attr('stroke-width', (l) => l.type === 'HAS' ? 2.5 : 1.5)
+      .attr('stroke-dasharray', (l) => l.type !== 'HAS' ? '6,3' : null)
+      .attr('stroke-opacity', 0.6)
+      .attr('marker-end', (l) => `url(#arr-${l.type})`);
+
+    // Edge labels (faint on dark bg, brighten on hover)
+    const edgeLblSel = zoomLayer.append('g').selectAll('text').data(links).join('text')
+      .attr('text-anchor', 'middle').attr('font-size', 9).attr('font-family', 'inherit')
+      .attr('fill', '#475569').attr('letter-spacing', '0.04em').attr('pointer-events', 'none')
+      .text((l) => l.type);
+
+    // ── Nodes ─────────────────────────────────────────────────────────────────
+    const nodeSel = zoomLayer.append('g').selectAll('g').data(nodes).join('g')
+      .style('cursor', 'grab')
+      .call(d3.drag()
+        .on('start', (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+        .on('drag',  (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+        .on('end',   (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+    // Draw shape
+    nodeSel.each(function (d) {
+      const g = d3.select(this);
+      const c = GROUP_CFG[d.group];
+      if (c.shape === 'rect') {
+        g.append('rect').attr('width', 112).attr('height', 40)
+          .attr('x', -56).attr('y', -20).attr('rx', 9)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2.5);
+      } else if (c.shape === 'circle') {
+        g.append('circle').attr('r', c.r)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2.5);
+      } else if (c.shape === 'diamond') {
+        const s = c.r * 1.55;
+        g.append('polygon').attr('points', `0,${-s} ${s},0 0,${s} ${-s},0`)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2);
+      } else if (c.shape === 'triangle') {
+        const s = c.r * 1.55;
+        g.append('polygon').attr('points', `0,${-s} ${s * 0.9},${s * 0.75} ${-s * 0.9},${s * 0.75}`)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2);
+      }
+    });
+
+    // Node labels — all white/light on dark canvas
+    nodeSel.append('text').attr('pointer-events', 'none').attr('text-anchor', 'middle')
+      .attr('font-family', 'inherit')
+      .attr('dy', (d) => {
+        const c = GROUP_CFG[d.group];
+        if (c.shape === 'rect') return '0.38em';
+        if (c.shape === 'circle') return c.r + 16;
+        return c.r * 1.7 + 14;
+      })
+      .attr('font-size', (d) => GROUP_CFG[d.group].fs)
+      .attr('font-weight', (d) => GROUP_CFG[d.group].fw)
+      .attr('letter-spacing', (d) => GROUP_CFG[d.group].ls)
+      .attr('fill', (d) => {
+        const c = GROUP_CFG[d.group];
+        if (c.shape === 'rect') return '#ffffff';
+        if (d.group === 'sector') return '#93c5fd';     // light-blue on dark-blue diamond
+        if (d.group === 'exchange') return '#5eead4';   // light-teal on dark-teal triangle
+        return '#f1f5f9';                               // off-white for all circle labels
+      })
+      .text((d) => d.label);
+
+    // ── Tooltip ───────────────────────────────────────────────────────────────
+    const tooltip = d3.select(container).append('div').attr('class', 'graph-tooltip')
+      .style('display', 'none');
+
+    function buildTip(d) {
+      const m = d.meta || {};
+      if (d.group === 'portfolio')
+        return `<div class="tt-title">${escapeHtml(m.portfolioName)}</div><div class="tt-sub">Portfolio</div>`;
+      if (d.group === 'stock')
+        return `<div class="tt-title">${escapeHtml(m.symbol)}</div>
+                <div class="tt-row">${escapeHtml(m.name)}</div>
+                <div class="tt-row">Sector: <b>${escapeHtml(m.sector)}</b></div>
+                <div class="tt-row">Exchange: <b>${escapeHtml(m.exchange)}</b></div>
+                <div class="tt-row">Price: <b>$${formatMoney(m.price)}</b></div>`;
+      if (d.group === 'bond')
+        return `<div class="tt-title">${escapeHtml(m.name)}</div>
+                <div class="tt-row">Issuer: <b>${escapeHtml(m.issuer)}</b></div>
+                <div class="tt-row">Type: <b>${escapeHtml(m.bondType)}</b></div>
+                <div class="tt-row">Rate: <b>${m.interestRate}%</b></div>
+                <div class="tt-row">Risk: <b>${escapeHtml(m.riskLevel)}</b></div>`;
+      if (d.group === 'cash')
+        return `<div class="tt-title">${escapeHtml(m.currency)}</div>
+                <div class="tt-row">Exchange rate: <b>${m.exchangeRate}</b></div>`;
+      if (d.group === 'sector')
+        return `<div class="tt-title">${escapeHtml(m.sector)}</div><div class="tt-sub">Sector</div>`;
+      if (d.group === 'exchange')
+        return `<div class="tt-title">${escapeHtml(m.exchange)}</div><div class="tt-sub">Exchange</div>`;
+      return '';
+    }
+
+    nodeSel
+      .on('mouseover.tip', (ev, d) => tooltip.html(buildTip(d)).style('display', 'block'))
+      .on('mousemove.tip', (ev) => tooltip.style('left', (ev.offsetX + 16) + 'px').style('top', (ev.offsetY - 14) + 'px'))
+      .on('mouseleave.tip', () => tooltip.style('display', 'none'));
+
+    // ── Neighbour highlight ───────────────────────────────────────────────────
+    nodeSel
+      .on('mouseover.hl', (ev, d) => {
+        const conn = new Set([d.id]);
+        links.forEach((l) => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source;
+          const t = typeof l.target === 'object' ? l.target.id : l.target;
+          if (s === d.id) conn.add(t);
+          if (t === d.id) conn.add(s);
+        });
+        nodeSel.attr('opacity', (n) => conn.has(n.id) ? 1 : 0.1);
+        linkSel.attr('stroke-opacity', (l) => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source;
+          const t = typeof l.target === 'object' ? l.target.id : l.target;
+          return (s === d.id || t === d.id) ? 1 : 0.04;
+        });
+        edgeLblSel.attr('opacity', (l) => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source;
+          const t = typeof l.target === 'object' ? l.target.id : l.target;
+          return (s === d.id || t === d.id) ? 1 : 0;
+        });
+        // glow on hovered node
+        d3.select(ev.currentTarget).select('circle,rect,polygon').attr('filter', 'url(#node-glow)');
+      })
+      .on('mouseleave.hl', (ev) => {
+        nodeSel.attr('opacity', 1);
+        linkSel.attr('stroke-opacity', 0.6);
+        edgeLblSel.attr('opacity', 1);
+        d3.select(ev.currentTarget).select('circle,rect,polygon').attr('filter', null);
+      });
+
+    // ── Tick ─────────────────────────────────────────────────────────────────
+    sim.on('tick', () => {
+      linkSel
+        .attr('x1', (l) => l.source.x).attr('y1', (l) => l.source.y)
+        .attr('x2', (l) => {
+          const r = nodeRadius(l.target);
+          const dx = l.target.x - l.source.x, dy = l.target.y - l.source.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          return l.target.x - (dx / dist) * (r + 5);
+        })
+        .attr('y2', (l) => {
+          const r = nodeRadius(l.target);
+          const dx = l.target.x - l.source.x, dy = l.target.y - l.source.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          return l.target.y - (dy / dist) * (r + 5);
+        });
+
+      edgeLblSel
+        .attr('x', (l) => (l.source.x + l.target.x) / 2)
+        .attr('y', (l) => (l.source.y + l.target.y) / 2);
+
+      nodeSel.attr('transform', (d) => `translate(${d.x},${d.y})`);
+    });
+
+    // ── Filter buttons ────────────────────────────────────────────────────────
+    const visible = new Set(['portfolio', 'stock', 'bond', 'cash', 'sector', 'exchange']);
+
+    function applyVisibility() {
+      nodeSel.style('display', (d) => visible.has(d.group) ? null : 'none');
+      const isVisible = (l) => {
+        const sg = typeof l.source === 'object' ? l.source.group : (nodes.find((n) => n.id === l.source) || {}).group;
+        const tg = typeof l.target === 'object' ? l.target.group : (nodes.find((n) => n.id === l.target) || {}).group;
+        return visible.has(sg) && visible.has(tg);
+      };
+      linkSel.style('display', (l) => isVisible(l) ? null : 'none');
+      edgeLblSel.style('display', (l) => isVisible(l) ? null : 'none');
+    }
+
+    app.querySelectorAll('.graph-filter-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const grp = btn.dataset.group;
+        if (visible.has(grp)) { visible.delete(grp); btn.classList.remove('active'); }
+        else { visible.add(grp); btn.classList.add('active'); }
+        applyVisibility();
+      });
+    });
+
+    // ── Reset zoom button ─────────────────────────────────────────────────────
+    document.getElementById('graph-zoom-in').addEventListener('click', () => {
+      svg.transition().duration(280).call(zoomBeh.scaleBy, 1.5);
+    });
+    document.getElementById('graph-zoom-out').addEventListener('click', () => {
+      svg.transition().duration(280).call(zoomBeh.scaleBy, 1 / 1.5);
+    });
+    document.getElementById('graph-fit-btn').addEventListener('click', () => {
+      svg.transition().duration(500).call(zoomBeh.transform, d3.zoomIdentity);
+    });
+
+  } catch (err) {
+    console.error(err);
+    app.innerHTML = emptyState('Failed to load graph data. See console for details.');
+    showToast(err.message || 'Graph load failed', 'error');
+  }
+}
