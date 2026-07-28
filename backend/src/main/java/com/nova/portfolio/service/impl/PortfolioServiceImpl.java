@@ -7,6 +7,7 @@ import com.nova.portfolio.mapper.PortfolioMapper;
 import com.nova.portfolio.model.Portfolio;
 import com.nova.portfolio.repository.HoldingRepository;
 import com.nova.portfolio.repository.PortfolioRepository;
+import com.nova.portfolio.repository.TransactionRepository;
 import com.nova.portfolio.service.PortfolioService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,10 +19,16 @@ public class PortfolioServiceImpl implements PortfolioService {
 
     private final PortfolioRepository portfolioRepository;
     private final HoldingRepository holdingRepository;
+    private final TransactionRepository transactionRepository;
 
-    public PortfolioServiceImpl(PortfolioRepository portfolioRepository, HoldingRepository holdingRepository) {
+    public PortfolioServiceImpl(
+        PortfolioRepository portfolioRepository,
+        HoldingRepository holdingRepository,
+        TransactionRepository transactionRepository
+    ) {
         this.portfolioRepository = portfolioRepository;
         this.holdingRepository = holdingRepository;
+        this.transactionRepository = transactionRepository;
     }
 
     @Override
@@ -67,6 +74,7 @@ public class PortfolioServiceImpl implements PortfolioService {
         if (!portfolioRepository.existsById(id)) {
             throw new ResourceNotFoundException("Portfolio not found for id: " + id);
         }
+        transactionRepository.deleteByPortfolioId(id);
         holdingRepository.deleteByPortfolioId(id);
         portfolioRepository.deleteById(id);
     }

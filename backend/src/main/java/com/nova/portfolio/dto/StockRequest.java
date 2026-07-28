@@ -29,6 +29,9 @@ public class StockRequest {
     @DecimalMin(value = "0.0000", inclusive = false, message = "price must be > 0")
     private BigDecimal price;
 
+    @DecimalMin(value = "0.0000", inclusive = true, message = "marketCap must be >= 0")
+    private BigDecimal marketCap;
+
     public String getSymbol() {
         return symbol;
     }
@@ -67,6 +70,14 @@ public class StockRequest {
 
     public void setPrice(BigDecimal price) {
         this.price = price;
+    }
+
+    public BigDecimal getMarketCap() {
+        return marketCap;
+    }
+
+    public void setMarketCap(BigDecimal marketCap) {
+        this.marketCap = marketCap;
     }
 }
 

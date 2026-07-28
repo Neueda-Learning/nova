@@ -16,6 +16,7 @@ public final class HoldingMapper {
         holding.setAssetType(request.getAssetType());
         holding.setAssetId(request.getAssetId());
         holding.setQuantity(request.getQuantity());
+        holding.setAverageCost(request.getAverageCost());
         return holding;
     }
 
@@ -24,6 +25,7 @@ public final class HoldingMapper {
         entity.setAssetType(request.getAssetType());
         entity.setAssetId(request.getAssetId());
         entity.setQuantity(request.getQuantity());
+        entity.setAverageCost(request.getAverageCost());
     }
 
     public static HoldingResponse toResponse(Holding holding) {
@@ -33,6 +35,7 @@ public final class HoldingMapper {
         response.setAssetType(holding.getAssetType());
         response.setAssetId(holding.getAssetId());
         response.setQuantity(holding.getQuantity());
+        response.setAverageCost(holding.getAverageCost());
         response.setCreatedAt(holding.getCreatedAt());
         response.setUpdatedAt(holding.getUpdatedAt());
         return response;

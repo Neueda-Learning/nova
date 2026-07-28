@@ -8,6 +8,7 @@ import com.nova.portfolio.model.AssetType;
 import com.nova.portfolio.model.Stock;
 import com.nova.portfolio.repository.HoldingRepository;
 import com.nova.portfolio.repository.StockRepository;
+import com.nova.portfolio.repository.TransactionRepository;
 import com.nova.portfolio.service.StockService;
 import org.springframework.stereotype.Service;
 
@@ -18,10 +19,16 @@ public class StockServiceImpl implements StockService {
 
     private final StockRepository stockRepository;
     private final HoldingRepository holdingRepository;
+    private final TransactionRepository transactionRepository;
 
-    public StockServiceImpl(StockRepository stockRepository, HoldingRepository holdingRepository) {
+    public StockServiceImpl(
+        StockRepository stockRepository,
+        HoldingRepository holdingRepository,
+        TransactionRepository transactionRepository
+    ) {
         this.stockRepository = stockRepository;
         this.holdingRepository = holdingRepository;
+        this.transactionRepository = transactionRepository;
     }
 
     @Override
@@ -68,6 +75,9 @@ public class StockServiceImpl implements StockService {
         }
         if (holdingRepository.existsByAssetTypeAndAssetId(AssetType.STOCK, id)) {
             throw new IllegalArgumentException("Cannot delete stock: it is referenced by existing holdings");
+        }
+        if (transactionRepository.existsByAssetTypeAndAssetId(AssetType.STOCK, id)) {
+            throw new IllegalArgumentException("Cannot delete stock: it is referenced by existing transactions");
         }
         stockRepository.deleteById(id);
     }

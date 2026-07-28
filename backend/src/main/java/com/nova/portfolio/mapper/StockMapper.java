@@ -16,6 +16,7 @@ public final class StockMapper {
         stock.setSector(request.getSector());
         stock.setExchange(request.getExchange());
         stock.setPrice(request.getPrice());
+        stock.setMarketCap(request.getMarketCap());
         return stock;
     }
 
@@ -25,6 +26,7 @@ public final class StockMapper {
         entity.setSector(request.getSector());
         entity.setExchange(request.getExchange());
         entity.setPrice(request.getPrice());
+        entity.setMarketCap(request.getMarketCap());
     }
 
     public static StockResponse toResponse(Stock entity) {
@@ -35,6 +37,7 @@ public final class StockMapper {
         response.setSector(entity.getSector());
         response.setExchange(entity.getExchange());
         response.setPrice(entity.getPrice());
+        response.setMarketCap(entity.getMarketCap());
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedAt(entity.getUpdatedAt());
         return response;

@@ -1,12 +1,15 @@
 package com.nova.portfolio.dto;
 
 import com.nova.portfolio.model.AssetType;
+import com.nova.portfolio.model.TransactionType;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PastOrPresent;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
-public class HoldingRequest {
+public class TransactionRequest {
 
     @NotNull(message = "portfolioId is required")
     private Long portfolioId;
@@ -17,13 +20,20 @@ public class HoldingRequest {
     @NotNull(message = "assetId is required")
     private Long assetId;
 
+    @NotNull(message = "transactionType is required")
+    private TransactionType transactionType;
+
     @NotNull(message = "quantity is required")
     @DecimalMin(value = "0.0001", message = "quantity must be >= 0.0001")
     private BigDecimal quantity;
 
-    @NotNull(message = "averageCost is required")
-    @DecimalMin(value = "0.0", message = "averageCost must be >= 0")
-    private BigDecimal averageCost;
+    @NotNull(message = "price is required")
+    @DecimalMin(value = "0.0000", inclusive = false, message = "price must be > 0")
+    private BigDecimal price;
+
+    @NotNull(message = "transactionDate is required")
+    @PastOrPresent(message = "transactionDate cannot be in the future")
+    private LocalDate transactionDate;
 
     public Long getPortfolioId() {
         return portfolioId;
@@ -49,6 +59,14 @@ public class HoldingRequest {
         this.assetId = assetId;
     }
 
+    public TransactionType getTransactionType() {
+        return transactionType;
+    }
+
+    public void setTransactionType(TransactionType transactionType) {
+        this.transactionType = transactionType;
+    }
+
     public BigDecimal getQuantity() {
         return quantity;
     }
@@ -57,11 +75,19 @@ public class HoldingRequest {
         this.quantity = quantity;
     }
 
-    public BigDecimal getAverageCost() {
-        return averageCost;
+    public BigDecimal getPrice() {
+        return price;
     }
 
-    public void setAverageCost(BigDecimal averageCost) {
-        this.averageCost = averageCost;
+    public void setPrice(BigDecimal price) {
+        this.price = price;
+    }
+
+    public LocalDate getTransactionDate() {
+        return transactionDate;
+    }
+
+    public void setTransactionDate(LocalDate transactionDate) {
+        this.transactionDate = transactionDate;
     }
 }

@@ -11,6 +11,7 @@ public class StockResponse {
     private String sector;
     private String exchange;
     private BigDecimal price;
+    private BigDecimal marketCap;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -60,6 +61,14 @@ public class StockResponse {
 
     public void setPrice(BigDecimal price) {
         this.price = price;
+    }
+
+    public BigDecimal getMarketCap() {
+        return marketCap;
+    }
+
+    public void setMarketCap(BigDecimal marketCap) {
+        this.marketCap = marketCap;
     }
 
     public LocalDateTime getCreatedAt() {

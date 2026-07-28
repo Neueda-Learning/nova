@@ -84,3 +84,11 @@ const HoldingApi = {
   update: (id, payload) => apiRequest(`/holdings/${id}`, { method: 'PUT', body: payload }),
   remove: (id) => apiRequest(`/holdings/${id}`, { method: 'DELETE' }),
 };
+
+const TransactionApi = {
+  list: () => apiRequest('/transactions'),
+  listByPortfolio: (portfolioId) => apiRequest(`/transactions?portfolioId=${portfolioId}`),
+  get: (id) => apiRequest(`/transactions/${id}`),
+  create: (payload) => apiRequest('/transactions', { method: 'POST', body: payload }),
+  remove: (id) => apiRequest(`/transactions/${id}`, { method: 'DELETE' }),
+};

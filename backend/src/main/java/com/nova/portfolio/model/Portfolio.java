@@ -18,6 +18,9 @@ public class Portfolio extends BaseTimeEntity {
     @Column(name = "portfolio_name", nullable = false, length = 128, unique = true)
     private String portfolioName;
 
+    @Column(name = "description", length = 255)
+    private String description;
+
     public Long getId() {
         return id;
     }
@@ -32,6 +35,14 @@ public class Portfolio extends BaseTimeEntity {
 
     public void setPortfolioName(String portfolioName) {
         this.portfolioName = portfolioName;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 }
 

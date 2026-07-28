@@ -5,6 +5,7 @@ const state = {
   stocks: [],
   bonds: [],
   cashAssets: [],
+  transactions: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -32,6 +33,19 @@ function formatMoney(value) {
   const num = Number(value);
   if (Number.isNaN(num)) return '&mdash;';
   return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
+function formatSignedMoney(value) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return '&mdash;';
+  const sign = num > 0 ? '+' : '';
+  return sign + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
+function pnlClass(value) {
+  const num = Number(value);
+  if (Number.isNaN(num) || num === 0) return '';
+  return num > 0 ? 'pnl-positive' : 'pnl-negative';
 }
 
 function emptyState(message) {
@@ -92,6 +106,8 @@ async function router() {
       await renderBondsView(app);
     } else if (section === 'cash-assets') {
       await renderCashAssetsView(app);
+    } else if (section === 'transactions') {
+      await renderTransactionsView(app);
     } else {
       app.innerHTML = emptyState('Page not found.');
     }
@@ -128,6 +144,10 @@ async function renderPortfoliosView(app) {
           <label for="portfolioName">Portfolio name</label>
           <input id="portfolioName" name="portfolioName" type="text" maxlength="128" required placeholder="e.g. Retirement Fund" />
         </div>
+        <div class="form-field">
+          <label for="description">Description (optional)</label>
+          <input id="description" name="description" type="text" maxlength="255" placeholder="e.g. Long-term retirement savings" />
+        </div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" id="portfolio-submit-btn">Create Portfolio</button>
           <button type="button" class="btn btn-secondary hidden" id="portfolio-cancel-btn">Cancel</button>
@@ -141,12 +161,13 @@ async function renderPortfoliosView(app) {
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Name</th><th>Created</th><th>Updated</th><th class="actions-col">Actions</th></tr>
+            <tr><th>Name</th><th>Description</th><th>Created</th><th>Updated</th><th class="actions-col">Actions</th></tr>
           </thead>
           <tbody>
             ${portfolios.map((p) => `
               <tr>
                 <td><a href="#/portfolios/${p.id}" class="link-strong">${escapeHtml(p.portfolioName)}</a></td>
+                <td>${p.description ? escapeHtml(p.description) : '&mdash;'}</td>
                 <td>${formatDateTime(p.createdAt)}</td>
                 <td>${formatDateTime(p.updatedAt)}</td>
                 <td class="actions-col">
@@ -173,7 +194,10 @@ function bindPortfoliosEvents(app) {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const id = form.elements.id.value;
-    const payload = { portfolioName: form.elements.portfolioName.value.trim() };
+    const payload = {
+      portfolioName: form.elements.portfolioName.value.trim(),
+      description: form.elements.description.value.trim() || null,
+    };
     try {
       if (id) {
         await PortfolioApi.update(id, payload);
@@ -196,6 +220,7 @@ function bindPortfoliosEvents(app) {
       if (!portfolio) return;
       form.elements.id.value = portfolio.id;
       form.elements.portfolioName.value = portfolio.portfolioName;
+      form.elements.description.value = portfolio.description || '';
       submitBtn.textContent = 'Update Portfolio';
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -245,7 +270,11 @@ function enrichHolding(holding) {
   }
 
   const marketValue = unitPrice !== null ? Number(holding.quantity) * Number(unitPrice) : null;
-  return { ...holding, assetLabel, unitPrice, marketValue };
+  const averageCost = holding.averageCost !== null && holding.averageCost !== undefined ? Number(holding.averageCost) : null;
+  const unrealizedPnl = (marketValue !== null && averageCost !== null)
+    ? marketValue - averageCost * Number(holding.quantity)
+    : null;
+  return { ...holding, assetLabel, unitPrice, marketValue, averageCost, unrealizedPnl };
 }
 
 function buildAllocation(enrichedHoldings) {
@@ -283,6 +312,8 @@ async function renderPortfolioDetailView(app, portfolioId) {
 
   const enriched = holdings.map(enrichHolding);
   const totalValue = enriched.reduce((sum, h) => sum + (h.marketValue || 0), 0);
+  const totalPnl = enriched.reduce((sum, h) => sum + (h.unrealizedPnl || 0), 0);
+  const hasPnlData = enriched.some((h) => h.unrealizedPnl !== null);
   const allocation = buildAllocation(enriched);
   const hasAnyAsset = stocks.length + bonds.length + cashAssets.length > 0;
 
@@ -291,12 +322,17 @@ async function renderPortfolioDetailView(app, portfolioId) {
       <a href="#/portfolios" class="back-link">&larr; All portfolios</a>
       <h1>${escapeHtml(portfolio.portfolioName)}</h1>
       <p class="subtitle">Created ${formatDateTime(portfolio.createdAt)} &middot; Last updated ${formatDateTime(portfolio.updatedAt)}</p>
+      ${portfolio.description ? `<p class="subtitle">${escapeHtml(portfolio.description)}</p>` : ''}
     </div>
 
     <section class="summary-grid">
       <div class="card summary-card">
         <span class="summary-label">Total Market Value</span>
         <span class="summary-value">${formatMoney(totalValue)}</span>
+      </div>
+      <div class="card summary-card">
+        <span class="summary-label">Unrealized P&amp;L</span>
+        <span class="summary-value ${pnlClass(totalPnl)}">${hasPnlData ? formatSignedMoney(totalPnl) : '&mdash;'}</span>
       </div>
       <div class="card summary-card">
         <span class="summary-label">Holdings</span>
@@ -336,12 +372,17 @@ async function renderPortfolioDetailView(app, portfolioId) {
           <label for="quantity">Quantity</label>
           <input id="quantity" name="quantity" type="number" step="0.0001" min="0.0001" required placeholder="10" />
         </div>
+        <div class="form-field">
+          <label for="averageCost">Average cost (per unit)</label>
+          <input id="averageCost" name="averageCost" type="number" step="0.0001" min="0" required placeholder="150.00" />
+        </div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" id="holding-submit-btn">Add Holding</button>
           <button type="button" class="btn btn-secondary hidden" id="holding-cancel-btn">Cancel</button>
         </div>
       </form>
       ${hasAnyAsset ? '' : '<p class="hint">No stocks, bonds or cash assets exist yet. Add some from the Stocks / Bonds / Cash Assets pages first.</p>'}
+      <p class="hint">Tip: use the <a href="#/transactions">Transactions</a> page to record BUY/SELL trades &mdash; quantity and average cost are then updated automatically.</p>
     </section>
 
     <section class="card">
@@ -350,7 +391,7 @@ async function renderPortfolioDetailView(app, portfolioId) {
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Type</th><th>Asset</th><th>Quantity</th><th>Unit Price</th><th>Market Value</th><th class="actions-col">Actions</th></tr>
+            <tr><th>Type</th><th>Asset</th><th>Quantity</th><th>Avg Cost</th><th>Unit Price</th><th>Market Value</th><th>Unrealized P&amp;L</th><th class="actions-col">Actions</th></tr>
           </thead>
           <tbody>
             ${enriched.map((h) => `
@@ -358,8 +399,10 @@ async function renderPortfolioDetailView(app, portfolioId) {
                 <td><span class="badge badge-${h.assetType.toLowerCase()}">${h.assetType}</span></td>
                 <td>${escapeHtml(h.assetLabel)}</td>
                 <td>${formatMoney(h.quantity)}</td>
+                <td>${h.averageCost !== null ? formatMoney(h.averageCost) : '&mdash;'}</td>
                 <td>${h.unitPrice !== null ? formatMoney(h.unitPrice) : '&mdash;'}</td>
                 <td>${h.marketValue !== null ? formatMoney(h.marketValue) : '&mdash;'}</td>
+                <td class="${pnlClass(h.unrealizedPnl)}">${h.unrealizedPnl !== null ? formatSignedMoney(h.unrealizedPnl) : '&mdash;'}</td>
                 <td class="actions-col">
                   <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${h.id}">Edit</button>
                   <button class="btn btn-sm btn-danger" data-action="delete" data-id="${h.id}">Remove</button>
@@ -414,6 +457,7 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
       assetType: assetTypeSelect.value,
       assetId: Number(assetIdSelect.value),
       quantity: Number(form.elements.quantity.value),
+      averageCost: Number(form.elements.averageCost.value),
     };
     try {
       if (id) {
@@ -442,6 +486,7 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
       assetTypeSelect.value = holding.assetType;
       populateAssetOptions(holding.assetType, holding.assetId);
       form.elements.quantity.value = holding.quantity;
+      form.elements.averageCost.value = holding.averageCost !== null && holding.averageCost !== undefined ? holding.averageCost : '';
       submitBtn.textContent = 'Update Holding';
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -501,6 +546,10 @@ async function renderStocksView(app) {
           <label for="price">Price</label>
           <input id="price" name="price" type="number" step="0.0001" min="0.0001" required placeholder="210.75" />
         </div>
+        <div class="form-field">
+          <label for="marketCap">Market cap (optional)</label>
+          <input id="marketCap" name="marketCap" type="number" step="0.01" min="0" placeholder="3200000000000" />
+        </div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" id="stock-submit-btn">Create Stock</button>
           <button type="button" class="btn btn-secondary hidden" id="stock-cancel-btn">Cancel</button>
@@ -514,7 +563,7 @@ async function renderStocksView(app) {
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Symbol</th><th>Name</th><th>Sector</th><th>Exchange</th><th>Price</th><th class="actions-col">Actions</th></tr>
+            <tr><th>Symbol</th><th>Name</th><th>Sector</th><th>Exchange</th><th>Price</th><th>Market Cap</th><th class="actions-col">Actions</th></tr>
           </thead>
           <tbody>
             ${stocks.map((s) => `
@@ -524,6 +573,7 @@ async function renderStocksView(app) {
                 <td>${escapeHtml(s.sector)}</td>
                 <td>${escapeHtml(s.exchange)}</td>
                 <td>${formatMoney(s.price)}</td>
+                <td>${s.marketCap !== null && s.marketCap !== undefined ? formatMoney(s.marketCap) : '&mdash;'}</td>
                 <td class="actions-col">
                   <button class="btn btn-sm btn-secondary" data-action="edit" data-id="${s.id}">Edit</button>
                   <button class="btn btn-sm btn-danger" data-action="delete" data-id="${s.id}">Delete</button>
@@ -553,6 +603,7 @@ function bindStocksEvents(app) {
       sector: form.elements.sector.value.trim(),
       exchange: form.elements.exchange.value.trim(),
       price: Number(form.elements.price.value),
+      marketCap: form.elements.marketCap.value ? Number(form.elements.marketCap.value) : null,
     };
     try {
       if (id) {
@@ -580,6 +631,7 @@ function bindStocksEvents(app) {
       form.elements.sector.value = stock.sector;
       form.elements.exchange.value = stock.exchange;
       form.elements.price.value = stock.price;
+      form.elements.marketCap.value = stock.marketCap !== null && stock.marketCap !== undefined ? stock.marketCap : '';
       submitBtn.textContent = 'Update Stock';
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -876,3 +928,203 @@ function bindCashAssetsEvents(app) {
     });
   });
 }
+
+// ---------------------------------------------------------------------------
+// Transactions view
+// ---------------------------------------------------------------------------
+
+function assetOptionsFor(assetType) {
+  if (assetType === 'STOCK') return state.stocks;
+  if (assetType === 'BOND') return state.bonds;
+  if (assetType === 'CASH') return state.cashAssets;
+  return [];
+}
+
+function assetLabelFor(assetType, assetId) {
+  const item = assetOptionsFor(assetType).find((a) => a.id === assetId);
+  if (!item) return `#${assetId}`;
+  if (assetType === 'STOCK') return `${item.symbol} - ${item.name}`;
+  if (assetType === 'BOND') return `${item.name} (${item.issuer})`;
+  return item.currency;
+}
+
+async function renderTransactionsView(app) {
+  app.innerHTML = renderLoading();
+
+  const [transactions, portfolios, stocks, bonds, cashAssets] = await Promise.all([
+    TransactionApi.list(),
+    PortfolioApi.list(),
+    StockApi.list(),
+    BondApi.list(),
+    CashAssetApi.list(),
+  ]);
+
+  state.transactions = transactions;
+  state.portfolios = portfolios;
+  state.stocks = stocks;
+  state.bonds = bonds;
+  state.cashAssets = cashAssets;
+
+  const hasAnyAsset = stocks.length + bonds.length + cashAssets.length > 0;
+  const portfolioName = (id) => {
+    const portfolio = portfolios.find((p) => p.id === id);
+    return portfolio ? portfolio.portfolioName : `#${id}`;
+  };
+
+  app.innerHTML = `
+    <div class="page-header">
+      <h1>Transactions</h1>
+      <p class="subtitle">Record BUY/SELL trades. Quantity and average cost on the related holding are updated automatically; deleting a record only removes the history entry.</p>
+    </div>
+
+    <section class="card">
+      <h2>Record Transaction</h2>
+      <form id="transaction-form" class="form-grid">
+        <div class="form-field">
+          <label for="portfolioId">Portfolio</label>
+          <select id="portfolioId" name="portfolioId" required>
+            <option value="">Select portfolio&hellip;</option>
+            ${portfolios.map((p) => `<option value="${p.id}">${escapeHtml(p.portfolioName)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="txnAssetType">Asset type</label>
+          <select id="txnAssetType" name="assetType" required>
+            <option value="">Select type&hellip;</option>
+            <option value="STOCK">Stock</option>
+            <option value="BOND">Bond</option>
+            <option value="CASH">Cash</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="txnAssetId">Asset</label>
+          <select id="txnAssetId" name="assetId" required>
+            <option value="">Select asset type first&hellip;</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="transactionType">Type</label>
+          <select id="transactionType" name="transactionType" required>
+            <option value="">Select&hellip;</option>
+            <option value="BUY">Buy</option>
+            <option value="SELL">Sell</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="txnQuantity">Quantity</label>
+          <input id="txnQuantity" name="quantity" type="number" step="0.0001" min="0.0001" required placeholder="10" />
+        </div>
+        <div class="form-field">
+          <label for="txnPrice">Price (per unit)</label>
+          <input id="txnPrice" name="price" type="number" step="0.0001" min="0.0001" required placeholder="150.00" />
+        </div>
+        <div class="form-field">
+          <label for="transactionDate">Date</label>
+          <input id="transactionDate" name="transactionDate" type="date" required />
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="transaction-submit-btn">Record Transaction</button>
+        </div>
+      </form>
+      ${hasAnyAsset ? '' : '<p class="hint">No stocks, bonds or cash assets exist yet. Add some from the Stocks / Bonds / Cash Assets pages first.</p>'}
+      ${portfolios.length === 0 ? '<p class="hint">No portfolios yet. Create one from the Portfolios page first.</p>' : ''}
+    </section>
+
+    <section class="card">
+      <h2>History (${transactions.length})</h2>
+      ${transactions.length === 0 ? emptyState('No transactions recorded yet.') : `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Portfolio</th><th>Type</th><th>Asset</th><th>Quantity</th><th>Price</th><th>Total</th><th class="actions-col">Actions</th></tr>
+          </thead>
+          <tbody>
+            ${transactions.map((t) => `
+              <tr>
+                <td>${escapeHtml(t.transactionDate)}</td>
+                <td>${escapeHtml(portfolioName(t.portfolioId))}</td>
+                <td><span class="badge badge-${t.transactionType.toLowerCase()}">${t.transactionType}</span></td>
+                <td>${escapeHtml(assetLabelFor(t.assetType, t.assetId))}</td>
+                <td>${formatMoney(t.quantity)}</td>
+                <td>${formatMoney(t.price)}</td>
+                <td>${formatMoney(Number(t.quantity) * Number(t.price))}</td>
+                <td class="actions-col">
+                  <button class="btn btn-sm btn-danger" data-action="delete" data-id="${t.id}">Delete</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>`}
+    </section>
+  `;
+
+  const dateInput = app.querySelector('#transactionDate');
+  const today = new Date().toISOString().slice(0, 10);
+  dateInput.max = today;
+  dateInput.value = today;
+
+  bindTransactionsEvents(app);
+}
+
+function bindTransactionsEvents(app) {
+  const form = app.querySelector('#transaction-form');
+  const assetTypeSelect = form.elements.assetType;
+  const assetIdSelect = form.elements.assetId;
+
+  function populateAssetOptions(type) {
+    if (!type) {
+      assetIdSelect.innerHTML = '<option value="">Select asset type first&hellip;</option>';
+      return;
+    }
+    const source = assetOptionsFor(type);
+    if (source.length === 0) {
+      assetIdSelect.innerHTML = '<option value="">No assets available</option>';
+      return;
+    }
+    assetIdSelect.innerHTML = source.map((item) => {
+      const label = type === 'STOCK'
+        ? `${item.symbol} - ${item.name}`
+        : type === 'BOND'
+          ? `${item.name} (${item.issuer})`
+          : `${item.currency} (rate ${item.exchangeRate})`;
+      return `<option value="${item.id}">${escapeHtml(label)}</option>`;
+    }).join('');
+  }
+
+  assetTypeSelect.addEventListener('change', () => populateAssetOptions(assetTypeSelect.value));
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const payload = {
+      portfolioId: Number(form.elements.portfolioId.value),
+      assetType: assetTypeSelect.value,
+      assetId: Number(assetIdSelect.value),
+      transactionType: form.elements.transactionType.value,
+      quantity: Number(form.elements.quantity.value),
+      price: Number(form.elements.price.value),
+      transactionDate: form.elements.transactionDate.value,
+    };
+    try {
+      await TransactionApi.create(payload);
+      showToast('Transaction recorded');
+      renderTransactionsView(app);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  app.querySelectorAll('button[data-action="delete"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this transaction record? This does not reverse its effect on the current holding.')) return;
+      try {
+        await TransactionApi.remove(btn.dataset.id);
+        showToast('Transaction deleted');
+        renderTransactionsView(app);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  });
+}
+

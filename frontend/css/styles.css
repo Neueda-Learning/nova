@@ -271,6 +271,23 @@ tbody tr:hover {
   background: #fee2e2;
   color: #b91c1c;
 }
+.badge-buy {
+  background: #d1fae5;
+  color: #047857;
+}
+.badge-sell {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.pnl-positive {
+  color: var(--color-success);
+  font-weight: 600;
+}
+.pnl-negative {
+  color: var(--color-danger);
+  font-weight: 600;
+}
 
 .empty-state {
   padding: 30px;

@@ -11,18 +11,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Entity
-@Table(
-    name = "portfolio_holdings",
-    uniqueConstraints = {
-        @UniqueConstraint(name = "uk_portfolio_asset", columnNames = {"portfolio_id", "asset_type", "asset_id"})
-    }
-)
-public class Holding extends BaseTimeEntity {
+@Table(name = "transactions")
+public class Transaction extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -39,11 +34,18 @@ public class Holding extends BaseTimeEntity {
     @Column(name = "asset_id", nullable = false)
     private Long assetId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "transaction_type", nullable = false, length = 8)
+    private TransactionType transactionType;
+
     @Column(name = "quantity", nullable = false, precision = 19, scale = 4)
     private BigDecimal quantity;
 
-    @Column(name = "average_cost", precision = 19, scale = 4)
-    private BigDecimal averageCost;
+    @Column(name = "price", nullable = false, precision = 19, scale = 4)
+    private BigDecimal price;
+
+    @Column(name = "transaction_date", nullable = false)
+    private LocalDate transactionDate;
 
     public Long getId() {
         return id;
@@ -77,6 +79,14 @@ public class Holding extends BaseTimeEntity {
         this.assetId = assetId;
     }
 
+    public TransactionType getTransactionType() {
+        return transactionType;
+    }
+
+    public void setTransactionType(TransactionType transactionType) {
+        this.transactionType = transactionType;
+    }
+
     public BigDecimal getQuantity() {
         return quantity;
     }
@@ -85,11 +95,19 @@ public class Holding extends BaseTimeEntity {
         this.quantity = quantity;
     }
 
-    public BigDecimal getAverageCost() {
-        return averageCost;
+    public BigDecimal getPrice() {
+        return price;
     }
 
-    public void setAverageCost(BigDecimal averageCost) {
-        this.averageCost = averageCost;
+    public void setPrice(BigDecimal price) {
+        this.price = price;
+    }
+
+    public LocalDate getTransactionDate() {
+        return transactionDate;
+    }
+
+    public void setTransactionDate(LocalDate transactionDate) {
+        this.transactionDate = transactionDate;
     }
 }

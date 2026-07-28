@@ -8,6 +8,7 @@ import com.nova.portfolio.model.AssetType;
 import com.nova.portfolio.model.Bond;
 import com.nova.portfolio.repository.BondRepository;
 import com.nova.portfolio.repository.HoldingRepository;
+import com.nova.portfolio.repository.TransactionRepository;
 import com.nova.portfolio.service.BondService;
 import org.springframework.stereotype.Service;
 
@@ -18,10 +19,16 @@ public class BondServiceImpl implements BondService {
 
     private final BondRepository bondRepository;
     private final HoldingRepository holdingRepository;
+    private final TransactionRepository transactionRepository;
 
-    public BondServiceImpl(BondRepository bondRepository, HoldingRepository holdingRepository) {
+    public BondServiceImpl(
+        BondRepository bondRepository,
+        HoldingRepository holdingRepository,
+        TransactionRepository transactionRepository
+    ) {
         this.bondRepository = bondRepository;
         this.holdingRepository = holdingRepository;
+        this.transactionRepository = transactionRepository;
     }
 
     @Override
@@ -59,6 +66,9 @@ public class BondServiceImpl implements BondService {
         }
         if (holdingRepository.existsByAssetTypeAndAssetId(AssetType.BOND, id)) {
             throw new IllegalArgumentException("Cannot delete bond: it is referenced by existing holdings");
+        }
+        if (transactionRepository.existsByAssetTypeAndAssetId(AssetType.BOND, id)) {
+            throw new IllegalArgumentException("Cannot delete bond: it is referenced by existing transactions");
         }
         bondRepository.deleteById(id);
     }

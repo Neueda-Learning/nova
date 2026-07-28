@@ -8,6 +8,7 @@ import com.nova.portfolio.model.AssetType;
 import com.nova.portfolio.model.CashAsset;
 import com.nova.portfolio.repository.CashAssetRepository;
 import com.nova.portfolio.repository.HoldingRepository;
+import com.nova.portfolio.repository.TransactionRepository;
 import com.nova.portfolio.service.CashAssetService;
 import org.springframework.stereotype.Service;
 
@@ -18,10 +19,16 @@ public class CashAssetServiceImpl implements CashAssetService {
 
     private final CashAssetRepository cashAssetRepository;
     private final HoldingRepository holdingRepository;
+    private final TransactionRepository transactionRepository;
 
-    public CashAssetServiceImpl(CashAssetRepository cashAssetRepository, HoldingRepository holdingRepository) {
+    public CashAssetServiceImpl(
+        CashAssetRepository cashAssetRepository,
+        HoldingRepository holdingRepository,
+        TransactionRepository transactionRepository
+    ) {
         this.cashAssetRepository = cashAssetRepository;
         this.holdingRepository = holdingRepository;
+        this.transactionRepository = transactionRepository;
     }
 
     @Override
@@ -68,6 +75,9 @@ public class CashAssetServiceImpl implements CashAssetService {
         }
         if (holdingRepository.existsByAssetTypeAndAssetId(AssetType.CASH, id)) {
             throw new IllegalArgumentException("Cannot delete cash asset: it is referenced by existing holdings");
+        }
+        if (transactionRepository.existsByAssetTypeAndAssetId(AssetType.CASH, id)) {
+            throw new IllegalArgumentException("Cannot delete cash asset: it is referenced by existing transactions");
         }
         cashAssetRepository.deleteById(id);
     }

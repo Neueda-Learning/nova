@@ -32,6 +32,9 @@ public class Stock extends BaseTimeEntity {
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal price;
 
+    @Column(name = "market_cap", precision = 19, scale = 4)
+    private BigDecimal marketCap;
+
     public Long getId() {
         return id;
     }
@@ -78,6 +81,14 @@ public class Stock extends BaseTimeEntity {
 
     public void setPrice(BigDecimal price) {
         this.price = price;
+    }
+
+    public BigDecimal getMarketCap() {
+        return marketCap;
+    }
+
+    public void setMarketCap(BigDecimal marketCap) {
+        this.marketCap = marketCap;
     }
 }
 

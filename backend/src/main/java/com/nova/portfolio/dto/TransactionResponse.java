@@ -1,18 +1,22 @@
 package com.nova.portfolio.dto;
 
 import com.nova.portfolio.model.AssetType;
+import com.nova.portfolio.model.TransactionType;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-public class HoldingResponse {
+public class TransactionResponse {
 
     private Long id;
     private Long portfolioId;
     private AssetType assetType;
     private Long assetId;
+    private TransactionType transactionType;
     private BigDecimal quantity;
-    private BigDecimal averageCost;
+    private BigDecimal price;
+    private LocalDate transactionDate;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -48,6 +52,14 @@ public class HoldingResponse {
         this.assetId = assetId;
     }
 
+    public TransactionType getTransactionType() {
+        return transactionType;
+    }
+
+    public void setTransactionType(TransactionType transactionType) {
+        this.transactionType = transactionType;
+    }
+
     public BigDecimal getQuantity() {
         return quantity;
     }
@@ -56,12 +68,20 @@ public class HoldingResponse {
         this.quantity = quantity;
     }
 
-    public BigDecimal getAverageCost() {
-        return averageCost;
+    public BigDecimal getPrice() {
+        return price;
     }
 
-    public void setAverageCost(BigDecimal averageCost) {
-        this.averageCost = averageCost;
+    public void setPrice(BigDecimal price) {
+        this.price = price;
+    }
+
+    public LocalDate getTransactionDate() {
+        return transactionDate;
+    }
+
+    public void setTransactionDate(LocalDate transactionDate) {
+        this.transactionDate = transactionDate;
     }
 
     public LocalDateTime getCreatedAt() {
