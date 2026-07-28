@@ -1,4 +1,4 @@
-// Minimal dependency-free canvas donut chart used to visualize portfolio allocation by asset type.
+// Minimal dependency-free canvas charts used to visualize portfolio allocation and dashboard trend data.
 
 const ASSET_TYPE_COLORS = {
   STOCK: '#2563eb',
@@ -6,7 +6,7 @@ const ASSET_TYPE_COLORS = {
   CASH: '#059669',
 };
 
-function drawAllocationChart(canvas, slices) {
+function drawPieChart(canvas, slices) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const width = canvas.width;
@@ -48,3 +48,105 @@ function drawAllocationChart(canvas, slices) {
   ctx.fillStyle = '#ffffff';
   ctx.fill();
 }
+
+function drawAllocationChart(canvas, slices) {
+  drawPieChart(canvas, slices);
+}
+
+function drawLineChart(canvas, points) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+
+  if (!points || points.length === 0) {
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(0, 0, width, height);
+    return;
+  }
+
+  const padding = { top: 16, right: 18, bottom: 26, left: 48 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const entries = points.map((point) => ({
+    ts: new Date(point.label).getTime(),
+    value: Math.max(0, Number(point.value) || 0),
+    label: point.label,
+  })).filter((entry) => Number.isFinite(entry.ts));
+  if (entries.length === 0) return;
+
+  const values = entries.map((entry) => entry.value);
+  const min = 0;
+  const max = Math.max(...values, 0);
+  const range = max - min || 1;
+  const minTs = Math.min(...entries.map((entry) => entry.ts));
+  const maxTs = Math.max(...entries.map((entry) => entry.ts));
+  const minHour = 3600000;
+  const tsRange = Math.max(maxTs - minTs, minHour);
+
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding.left, padding.top);
+  ctx.lineTo(padding.left, height - padding.bottom);
+  ctx.lineTo(width - padding.right, height - padding.bottom);
+  ctx.stroke();
+
+  const gridLines = 4;
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+
+  for (let i = 0; i <= gridLines; i += 1) {
+    const y = padding.top + (chartHeight / gridLines) * i;
+    const value = Math.max(0, max - (range / gridLines) * i);
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(width - padding.right, y);
+    ctx.stroke();
+    ctx.fillText(value.toLocaleString(undefined, { maximumFractionDigits: 2 }), padding.left - 8, y);
+  }
+
+  const coords = entries.map((entry) => {
+    const x = padding.left + ((entry.ts - minTs) / tsRange) * chartWidth;
+    const normalized = (entry.value - min) / range;
+    const y = padding.top + chartHeight - normalized * chartHeight;
+    return { x, y, point: entry };
+  });
+
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  coords.forEach((coord, index) => {
+    if (index === 0) ctx.moveTo(coord.x, coord.y);
+    else ctx.lineTo(coord.x, coord.y);
+  });
+  ctx.stroke();
+
+  coords.forEach((coord) => {
+    ctx.beginPath();
+    ctx.arc(coord.x, coord.y, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#2563eb';
+    ctx.fill();
+  });
+
+  if (entries.length > 0) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    coords.forEach((coord, index) => {
+      ctx.fillStyle = '#64748b';
+      const hourLabel = new Date(coord.point.ts).toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+      });
+      if (index === 0 || index === coords.length - 1 || index % Math.max(1, Math.ceil(coords.length / 6)) === 0) {
+        ctx.fillText(hourLabel, coord.x, height - padding.bottom + 6);
+      }
+    });
+  }
+}
+

@@ -9,21 +9,32 @@
 <body>
   <header class="topbar">
     <div class="topbar-inner">
-      <a class="brand" href="#/portfolios">Nova Portfolio Manager</a>
-      <nav class="nav">
+      <a class="brand" href="#/home">Nova Portfolio Manager</a>
+      <span class="brand-subtitle">Home · Portfolios · Stocks · Bonds · Cash Assets</span>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <nav class="nav side-nav">
+        <a href="#/home" data-route="home">Home</a>
         <a href="#/portfolios" data-route="portfolios">Portfolios</a>
         <a href="#/stocks" data-route="stocks">Stocks</a>
         <a href="#/bonds" data-route="bonds">Bonds</a>
         <a href="#/cash-assets" data-route="cash-assets">Cash Assets</a>
       </nav>
-    </div>
-  </header>
+      <div class="sidebar-note">
+        <strong>Quick access</strong>
+        <p>All core modules are shown side by side with Home.</p>
+      </div>
+    </aside>
+
+    <main id="app" class="container content-area">
+      <div class="loading">Loading&hellip;</div>
+    </main>
+  </div>
 
   <div id="toast" class="toast"></div>
-
-  <main id="app" class="container">
-    <div class="loading">Loading&hellip;</div>
-  </main>
 
   <footer class="footer">
     <p>Nova Portfolio Manager &mdash; training project (single user, no authentication)</p>
