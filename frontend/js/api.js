@@ -80,6 +80,10 @@ const CashAssetApi = {
 };
 
 const HoldingApi = {
+  list: (portfolioId) => {
+    const query = portfolioId !== undefined && portfolioId !== null ? `?portfolioId=${encodeURIComponent(portfolioId)}` : '';
+    return apiRequest(`/holdings${query}`);
+  },
   create: (payload) => apiRequest('/holdings', { method: 'POST', body: payload }),
   update: (id, payload) => apiRequest(`/holdings/${id}`, { method: 'PUT', body: payload }),
   remove: (id) => apiRequest(`/holdings/${id}`, { method: 'DELETE' }),
