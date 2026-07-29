@@ -77,9 +77,6 @@ class ApiCreateFlowIntegrationTest {
     private Long createStock(String symbol) throws Exception {
         Map<String, Object> payload = new HashMap<>();
         payload.put("symbol", symbol);
-        payload.put("name", "Apple Inc");
-        payload.put("sector", "Technology");
-        payload.put("exchange", "NASDAQ");
         payload.put("price", new BigDecimal("210.7500"));
 
         String response = mockMvc.perform(post("/api/stocks")

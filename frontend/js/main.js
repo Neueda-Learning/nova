@@ -770,15 +770,15 @@ async function renderStocksView(app) {
         </div>
         <div class="form-field">
           <label for="stockName">Company name</label>
-          <input id="stockName" name="name" type="text" maxlength="128" required placeholder="Apple Inc." />
+          <input id="stockName" name="name" type="text" maxlength="128" placeholder="Apple Inc." />
         </div>
         <div class="form-field">
           <label for="sector">Sector</label>
-          <input id="sector" name="sector" type="text" maxlength="64" required placeholder="Technology" />
+          <input id="sector" name="sector" type="text" maxlength="64" placeholder="Technology" />
         </div>
         <div class="form-field">
           <label for="exchange">Exchange</label>
-          <input id="exchange" name="exchange" type="text" maxlength="64" required placeholder="NASDAQ" />
+          <input id="exchange" name="exchange" type="text" maxlength="64" placeholder="NASDAQ" />
         </div>
         <div class="form-field">
           <label for="price">Price</label>
@@ -851,9 +851,9 @@ function bindStocksEvents(app) {
     const id = form.elements.id.value;
     const payload = {
       symbol: form.elements.symbol.value.trim().toUpperCase(),
-      name: form.elements.name.value.trim(),
-      sector: form.elements.sector.value.trim(),
-      exchange: form.elements.exchange.value.trim(),
+      name: form.elements.name.value.trim() || null,
+      sector: form.elements.sector.value.trim() || null,
+      exchange: form.elements.exchange.value.trim() || null,
       price: Number(toTenths(form.elements.price.value)),
       marketCap: form.elements.marketCap.value ? Number(form.elements.marketCap.value) : null,
     };
