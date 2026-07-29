@@ -1637,16 +1637,20 @@ async function renderGraphView(app) {
 
     stocks.forEach((s) => {
       nodes.push({ id: `s${s.id}`, label: s.symbol, group: 'stock', meta: s });
-      if (s.sector && !sectorSet.has(s.sector)) {
-        sectorSet.add(s.sector);
-        nodes.push({ id: `sec_${s.sector}`, label: s.sector, group: 'sector', meta: { sector: s.sector } });
+      if (s.sector) {
+        if (!sectorSet.has(s.sector)) {
+          sectorSet.add(s.sector);
+          nodes.push({ id: `sec_${s.sector}`, label: s.sector, group: 'sector', meta: { sector: s.sector } });
+        }
+        links.push({ source: `s${s.id}`, target: `sec_${s.sector}`, type: 'BELONGS_TO' });
       }
-      if (s.exchange && !exchangeSet.has(s.exchange)) {
-        exchangeSet.add(s.exchange);
-        nodes.push({ id: `ex_${s.exchange}`, label: s.exchange, group: 'exchange', meta: { exchange: s.exchange } });
+      if (s.exchange) {
+        if (!exchangeSet.has(s.exchange)) {
+          exchangeSet.add(s.exchange);
+          nodes.push({ id: `ex_${s.exchange}`, label: s.exchange, group: 'exchange', meta: { exchange: s.exchange } });
+        }
+        links.push({ source: `s${s.id}`, target: `ex_${s.exchange}`, type: 'LISTED_ON' });
       }
-      links.push({ source: `s${s.id}`, target: `sec_${s.sector}`, type: 'BELONGS_TO' });
-      links.push({ source: `s${s.id}`, target: `ex_${s.exchange}`, type: 'LISTED_ON' });
     });
 
     bonds.forEach((b) => {
@@ -1726,16 +1730,16 @@ async function renderGraphView(app) {
     const W = container.clientWidth || 900;
     const H = 620;
 
-    // ── Premium dark-canvas colour palette ──────────────────────────────────
+    // ── Light-canvas colour palette (Neo4j style) ───────────────────────────
     const GROUP_CFG = {
-      portfolio: { fill: '#6366f1', stroke: '#818cf8', r: 0,  shape: 'rect',     fs: 13, fw: '700', ls: '0.02em' },
-      stock:     { fill: '#f59e0b', stroke: '#fcd34d', r: 26, shape: 'circle',   fs: 12, fw: '700', ls: '0.06em' },
-      bond:      { fill: '#a855f7', stroke: '#c084fc', r: 24, shape: 'circle',   fs: 11, fw: '600', ls: '0.03em' },
-      cash:      { fill: '#10b981', stroke: '#6ee7b7', r: 24, shape: 'circle',   fs: 12, fw: '700', ls: '0.04em' },
-      sector:    { fill: '#1e3a5f', stroke: '#3b82f6', r: 22, shape: 'diamond',  fs: 10, fw: '500', ls: '0.02em' },
-      exchange:  { fill: '#134e4a', stroke: '#2dd4bf', r: 22, shape: 'triangle', fs: 10, fw: '500', ls: '0.02em' },
+      portfolio: { fill: '#6366f1', stroke: '#4f46e5', r: 0,  shape: 'rect',     fs: 13, fw: '700', ls: '0.02em' },
+      stock:     { fill: '#d97706', stroke: '#b45309', r: 26, shape: 'circle',   fs: 12, fw: '700', ls: '0.06em' },
+      bond:      { fill: '#7c3aed', stroke: '#6d28d9', r: 24, shape: 'circle',   fs: 11, fw: '600', ls: '0.03em' },
+      cash:      { fill: '#059669', stroke: '#047857', r: 24, shape: 'circle',   fs: 12, fw: '700', ls: '0.04em' },
+      sector:    { fill: '#2563eb', stroke: '#1d4ed8', r: 22, shape: 'diamond',  fs: 10, fw: '500', ls: '0.02em' },
+      exchange:  { fill: '#0891b2', stroke: '#0e7490', r: 22, shape: 'triangle', fs: 10, fw: '500', ls: '0.02em' },
     };
-    const LINK_COLOR = { HAS: '#818cf8', BELONGS_TO: '#334155', LISTED_ON: '#0e7490' };
+    const LINK_COLOR = { HAS: '#6366f1', BELONGS_TO: '#94a3b8', LISTED_ON: '#0891b2' };
 
     function nodeRadius(d) {
       const c = GROUP_CFG[d.group];
@@ -1759,9 +1763,11 @@ async function renderGraphView(app) {
     });
     const glowF = defs.append('filter').attr('id', 'node-glow')
       .attr('x', '-40%').attr('y', '-40%').attr('width', '180%').attr('height', '180%');
-    glowF.append('feGaussianBlur').attr('in', 'SourceGraphic').attr('stdDeviation', '5').attr('result', 'blur');
+    glowF.append('feGaussianBlur').attr('in', 'SourceAlpha').attr('stdDeviation', '4').attr('result', 'blur');
+    glowF.append('feFlood').attr('flood-color', '#6366f1').attr('flood-opacity', '0.35').attr('result', 'color');
+    glowF.append('feComposite').attr('in', 'color').attr('in2', 'blur').attr('operator', 'in').attr('result', 'glow');
     const fm = glowF.append('feMerge');
-    fm.append('feMergeNode').attr('in', 'blur');
+    fm.append('feMergeNode').attr('in', 'glow');
     fm.append('feMergeNode').attr('in', 'SourceGraphic');
 
     // ── Zoom (wheel disabled — use buttons instead) ──────────────────────────
@@ -1787,10 +1793,10 @@ async function renderGraphView(app) {
       .attr('stroke-opacity', 0.6)
       .attr('marker-end', (l) => `url(#arr-${l.type})`);
 
-    // Edge labels (faint on dark bg, brighten on hover)
+    // Edge labels (visible on light bg)
     const edgeLblSel = zoomLayer.append('g').selectAll('text').data(links).join('text')
       .attr('text-anchor', 'middle').attr('font-size', 9).attr('font-family', 'inherit')
-      .attr('fill', '#475569').attr('letter-spacing', '0.04em').attr('pointer-events', 'none')
+      .attr('fill', '#94a3b8').attr('letter-spacing', '0.04em').attr('pointer-events', 'none')
       .text((l) => l.type);
 
     // ── Nodes ─────────────────────────────────────────────────────────────────
@@ -1823,7 +1829,7 @@ async function renderGraphView(app) {
       }
     });
 
-    // Node labels — all white/light on dark canvas
+    // Node labels — white inside rect, dark outside circles/shapes on light canvas
     nodeSel.append('text').attr('pointer-events', 'none').attr('text-anchor', 'middle')
       .attr('font-family', 'inherit')
       .attr('dy', (d) => {
@@ -1837,10 +1843,8 @@ async function renderGraphView(app) {
       .attr('letter-spacing', (d) => GROUP_CFG[d.group].ls)
       .attr('fill', (d) => {
         const c = GROUP_CFG[d.group];
-        if (c.shape === 'rect') return '#ffffff';
-        if (d.group === 'sector') return '#93c5fd';     // light-blue on dark-blue diamond
-        if (d.group === 'exchange') return '#5eead4';   // light-teal on dark-teal triangle
-        return '#f1f5f9';                               // off-white for all circle labels
+        if (c.shape === 'rect') return '#ffffff';   // white text inside colored rect
+        return '#1e293b';                            // dark text outside all other shapes
       })
       .text((d) => d.label);
 
