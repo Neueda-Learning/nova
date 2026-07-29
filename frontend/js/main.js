@@ -13,6 +13,101 @@ const DASHBOARD_HISTORY_KEY = 'nova.dashboard.history.v1';
 let dashboardRefreshTimer = null;
 let activeRoute = 'home';
 
+// Pre-stored reference data for the Bonds form. These populate <datalist> suggestions for the
+// "Bond type" and "Issuer" fields (same free-text-plus-dropdown pattern as the cash asset
+// currency field) but the inputs remain plain text so any value can still be typed manually.
+const BOND_TYPES = [
+  'Government',
+  'Corporate',
+  'Municipal',
+  'Agency',
+  'Supranational',
+  'High Yield',
+  'Convertible',
+  'Zero Coupon',
+  'Inflation Linked',
+  'Asset Backed',
+  'Mortgage Backed',
+  'Covered Bond',
+];
+
+const BOND_ISSUERS = [
+  'U.S. Treasury',
+  'UK Debt Management Office',
+  'German Federal Government',
+  'French Republic',
+  'Government of Japan',
+  "People's Bank of China (PBOC)",
+  'Government of Canada',
+  'Italian Republic',
+  'Commonwealth of Australia',
+  'Swiss Confederation',
+  'World Bank (IBRD)',
+  'International Finance Corporation (IFC)',
+  'European Investment Bank (EIB)',
+  'Asian Development Bank (ADB)',
+  'Inter-American Development Bank (IADB)',
+  'African Development Bank (AfDB)',
+  'European Stability Mechanism (ESM)',
+  'Nordic Investment Bank',
+  'Fannie Mae (FNMA)',
+  'Freddie Mac (FHLMC)',
+  'Federal Home Loan Banks (FHLB)',
+  'KfW (Germany)',
+  'Agence Française de Développement (AFD)',
+  'Japan Finance Organization for Municipalities (JFM)',
+  'Apple Inc.',
+  'Microsoft Corporation',
+  'Johnson & Johnson',
+  'Walmart Inc.',
+  'Procter & Gamble Co.',
+  'Coca-Cola Company',
+  'Toyota Motor Corporation',
+  'Royal Dutch Shell',
+  'HSBC Holdings',
+  'Siemens AG',
+  'Nestlé S.A.',
+  'Samsung Electronics',
+  'Goldman Sachs Group',
+  'JPMorgan Chase & Co.',
+  'Bank of America Corp.',
+  'Citigroup Inc.',
+  'Morgan Stanley',
+  'Deutsche Bank AG',
+  'Barclays PLC',
+  'Credit Suisse Group',
+  'BNP Paribas',
+  'UBS Group AG',
+  'Tesla Inc.',
+  'Netflix Inc.',
+  'Petrobras (Brazil)',
+  'Pemex (Mexico)',
+  'Gazprom (Russia)',
+  'Turkey (Government)',
+  'Argentina (Government)',
+  'South Africa (Government)',
+];
+
+// Lookup maps built from STOCK_REFERENCE_DATA (js/stock-reference-data.js), keyed by each
+// field's normalized (case-insensitive) value. Used on the Stocks form so that picking a value
+// for symbol/companyName/sector/exchange from its dropdown auto-fills the other three fields
+// from the matching row (symbol is unique per row; for name/sector/exchange, which several rows
+// can share, the first matching row in the dataset wins). None of this reference data is ever
+// sent to the backend — it is purely a frontend convenience for filling out the create/edit form.
+const STOCK_BY_SYMBOL = new Map();
+const STOCK_BY_NAME = new Map();
+const STOCK_BY_SECTOR = new Map();
+const STOCK_BY_EXCHANGE = new Map();
+STOCK_REFERENCE_DATA.forEach((row) => {
+  STOCK_BY_SYMBOL.set(row.symbol.toUpperCase(), row);
+  const nameKey = row.name.toLowerCase();
+  if (!STOCK_BY_NAME.has(nameKey)) STOCK_BY_NAME.set(nameKey, row);
+  const sectorKey = row.sector.toLowerCase();
+  if (!STOCK_BY_SECTOR.has(sectorKey)) STOCK_BY_SECTOR.set(sectorKey, row);
+  const exchangeKey = row.exchange.toLowerCase();
+  if (!STOCK_BY_EXCHANGE.has(exchangeKey)) STOCK_BY_EXCHANGE.set(exchangeKey, row);
+});
+
 // ---------------------------------------------------------------------------
 // Small utilities
 // ---------------------------------------------------------------------------
@@ -754,6 +849,17 @@ async function renderStocksView(app) {
   const stocks = await StockApi.list();
   state.stocks = stocks;
 
+  const sortedSectors = [...STOCK_BY_SECTOR.values()].sort((a, b) => a.sector.localeCompare(b.sector));
+  const sortedExchanges = [...STOCK_BY_EXCHANGE.values()].sort((a, b) => a.exchange.localeCompare(b.exchange));
+  const stockSymbolOptions = STOCK_REFERENCE_DATA
+    .map((r) => `<option value="${escapeHtml(r.symbol)}">${escapeHtml(r.name)}</option>`).join('');
+  const stockNameOptions = [...STOCK_BY_NAME.values()]
+    .map((r) => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.symbol)}</option>`).join('');
+  const stockSectorOptions = sortedSectors
+    .map((r) => `<option value="${escapeHtml(r.sector)}"></option>`).join('');
+  const stockExchangeOptions = sortedExchanges
+    .map((r) => `<option value="${escapeHtml(r.exchange)}"></option>`).join('');
+
   app.innerHTML = `
     <div class="page-header">
       <h1>Stocks</h1>
@@ -766,19 +872,31 @@ async function renderStocksView(app) {
         <input type="hidden" name="id" />
         <div class="form-field">
           <label for="symbol">Symbol</label>
-          <input id="symbol" name="symbol" type="text" maxlength="32" required placeholder="AAPL" />
+          <input id="symbol" name="symbol" type="text" maxlength="32"
+            required placeholder="AAPL"
+            autocomplete="off" list="stock-symbol-list" />
+          <datalist id="stock-symbol-list">${stockSymbolOptions}</datalist>
         </div>
         <div class="form-field">
           <label for="stockName">Company name</label>
-          <input id="stockName" name="name" type="text" maxlength="128" placeholder="Apple Inc." />
+          <input id="stockName" name="name" type="text" maxlength="128"
+            placeholder="Apple Inc."
+            autocomplete="off" list="stock-name-list" />
+          <datalist id="stock-name-list">${stockNameOptions}</datalist>
         </div>
         <div class="form-field">
           <label for="sector">Sector</label>
-          <input id="sector" name="sector" type="text" maxlength="64" placeholder="Technology" />
+          <input id="sector" name="sector" type="text" maxlength="64"
+            placeholder="Technology"
+            autocomplete="off" list="stock-sector-list" />
+          <datalist id="stock-sector-list">${stockSectorOptions}</datalist>
         </div>
         <div class="form-field">
           <label for="exchange">Exchange</label>
-          <input id="exchange" name="exchange" type="text" maxlength="64" placeholder="NASDAQ" />
+          <input id="exchange" name="exchange" type="text" maxlength="64"
+            placeholder="NASDAQ"
+            autocomplete="off" list="stock-exchange-list" />
+          <datalist id="stock-exchange-list">${stockExchangeOptions}</datalist>
         </div>
         <div class="form-field">
           <label for="price">Price</label>
@@ -835,6 +953,33 @@ function bindStocksEvents(app) {
   const cancelBtn = app.querySelector('#stock-cancel-btn');
   const submitBtn = app.querySelector('#stock-submit-btn');
   bindTenthsInput(form.elements.price);
+
+  // Symbol / company name / sector / exchange are a strongly-bound tuple in STOCK_REFERENCE_DATA:
+  // picking a preset value for any one of them (via its <datalist>) auto-fills the other three
+  // from the matching row. Typing a value that doesn't match a known row leaves the other fields
+  // untouched, so the user must then fill all four in manually.
+  function fillStockFromRow(row) {
+    form.elements.symbol.value = row.symbol;
+    form.elements.name.value = row.name;
+    form.elements.sector.value = row.sector;
+    form.elements.exchange.value = row.exchange;
+  }
+  form.elements.symbol.addEventListener('input', () => {
+    const match = STOCK_BY_SYMBOL.get(form.elements.symbol.value.trim().toUpperCase());
+    if (match) fillStockFromRow(match);
+  });
+  form.elements.name.addEventListener('input', () => {
+    const match = STOCK_BY_NAME.get(form.elements.name.value.trim().toLowerCase());
+    if (match) fillStockFromRow(match);
+  });
+  form.elements.sector.addEventListener('input', () => {
+    const match = STOCK_BY_SECTOR.get(form.elements.sector.value.trim().toLowerCase());
+    if (match) fillStockFromRow(match);
+  });
+  form.elements.exchange.addEventListener('input', () => {
+    const match = STOCK_BY_EXCHANGE.get(form.elements.exchange.value.trim().toLowerCase());
+    if (match) fillStockFromRow(match);
+  });
 
   const searchInput = app.querySelector('#stock-search');
   if (searchInput) {
@@ -929,11 +1074,21 @@ async function renderBondsView(app) {
         </div>
         <div class="form-field">
           <label for="bondType">Bond type</label>
-          <input id="bondType" name="bondType" type="text" maxlength="64" required placeholder="Government" />
+          <input id="bondType" name="bondType" type="text" maxlength="64"
+            required placeholder="Government"
+            autocomplete="off" list="bond-type-list" />
+          <datalist id="bond-type-list">
+            ${BOND_TYPES.map((t) => `<option value="${escapeHtml(t)}"></option>`).join('')}
+          </datalist>
         </div>
         <div class="form-field">
           <label for="issuer">Issuer</label>
-          <input id="issuer" name="issuer" type="text" maxlength="128" required placeholder="US Treasury" />
+          <input id="issuer" name="issuer" type="text" maxlength="128"
+            required placeholder="U.S. Treasury"
+            autocomplete="off" list="issuer-list" />
+          <datalist id="issuer-list">
+            ${BOND_ISSUERS.map((i) => `<option value="${escapeHtml(i)}"></option>`).join('')}
+          </datalist>
         </div>
         <div class="form-field">
           <label for="interestRate">Interest rate (%)</label>
