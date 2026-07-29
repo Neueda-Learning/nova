@@ -13,6 +13,81 @@ const DASHBOARD_HISTORY_KEY = 'nova.dashboard.history.v1';
 let dashboardRefreshTimer = null;
 let activeRoute = 'home';
 
+// Pre-stored reference data for the Bonds form. These populate <datalist> suggestions for the
+// "Bond type" and "Issuer" fields (same free-text-plus-dropdown pattern as the cash asset
+// currency field) but the inputs remain plain text so any value can still be typed manually.
+const BOND_TYPES = [
+  'Government',
+  'Corporate',
+  'Municipal',
+  'Agency',
+  'Supranational',
+  'High Yield',
+  'Convertible',
+  'Zero Coupon',
+  'Inflation Linked',
+  'Asset Backed',
+  'Mortgage Backed',
+  'Covered Bond',
+];
+
+const BOND_ISSUERS = [
+  'U.S. Treasury',
+  'UK Debt Management Office',
+  'German Federal Government',
+  'French Republic',
+  'Government of Japan',
+  "People's Bank of China (PBOC)",
+  'Government of Canada',
+  'Italian Republic',
+  'Commonwealth of Australia',
+  'Swiss Confederation',
+  'World Bank (IBRD)',
+  'International Finance Corporation (IFC)',
+  'European Investment Bank (EIB)',
+  'Asian Development Bank (ADB)',
+  'Inter-American Development Bank (IADB)',
+  'African Development Bank (AfDB)',
+  'European Stability Mechanism (ESM)',
+  'Nordic Investment Bank',
+  'Fannie Mae (FNMA)',
+  'Freddie Mac (FHLMC)',
+  'Federal Home Loan Banks (FHLB)',
+  'KfW (Germany)',
+  'Agence Française de Développement (AFD)',
+  'Japan Finance Organization for Municipalities (JFM)',
+  'Apple Inc.',
+  'Microsoft Corporation',
+  'Johnson & Johnson',
+  'Walmart Inc.',
+  'Procter & Gamble Co.',
+  'Coca-Cola Company',
+  'Toyota Motor Corporation',
+  'Royal Dutch Shell',
+  'HSBC Holdings',
+  'Siemens AG',
+  'Nestlé S.A.',
+  'Samsung Electronics',
+  'Goldman Sachs Group',
+  'JPMorgan Chase & Co.',
+  'Bank of America Corp.',
+  'Citigroup Inc.',
+  'Morgan Stanley',
+  'Deutsche Bank AG',
+  'Barclays PLC',
+  'Credit Suisse Group',
+  'BNP Paribas',
+  'UBS Group AG',
+  'Tesla Inc.',
+  'Netflix Inc.',
+  'Petrobras (Brazil)',
+  'Pemex (Mexico)',
+  'Gazprom (Russia)',
+  'Turkey (Government)',
+  'Argentina (Government)',
+  'South Africa (Government)',
+];
+
 // ---------------------------------------------------------------------------
 // Small utilities
 // ---------------------------------------------------------------------------
@@ -929,11 +1004,21 @@ async function renderBondsView(app) {
         </div>
         <div class="form-field">
           <label for="bondType">Bond type</label>
-          <input id="bondType" name="bondType" type="text" maxlength="64" required placeholder="Government" />
+          <input id="bondType" name="bondType" type="text" maxlength="64"
+            required placeholder="Government"
+            autocomplete="off" list="bond-type-list" />
+          <datalist id="bond-type-list">
+            ${BOND_TYPES.map((t) => `<option value="${escapeHtml(t)}"></option>`).join('')}
+          </datalist>
         </div>
         <div class="form-field">
           <label for="issuer">Issuer</label>
-          <input id="issuer" name="issuer" type="text" maxlength="128" required placeholder="US Treasury" />
+          <input id="issuer" name="issuer" type="text" maxlength="128"
+            required placeholder="U.S. Treasury"
+            autocomplete="off" list="issuer-list" />
+          <datalist id="issuer-list">
+            ${BOND_ISSUERS.map((i) => `<option value="${escapeHtml(i)}"></option>`).join('')}
+          </datalist>
         </div>
         <div class="form-field">
           <label for="interestRate">Interest rate (%)</label>
