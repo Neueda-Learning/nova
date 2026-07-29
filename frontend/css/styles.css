@@ -729,13 +729,14 @@ tbody tr:hover {
 .graph-container {
   height: 620px;
   overflow: hidden;
-  /* Dark canvas with subtle dot-grid — premium graph-tool aesthetic */
-  background-color: #0d1117;
-  background-image: radial-gradient(circle, #1e293b 1px, transparent 1px);
+  /* Light canvas with subtle dot-grid — Neo4j-style light theme */
+  background-color: #f8faff;
+  background-image: radial-gradient(circle, #c7d2fe 1.2px, transparent 1.2px);
   background-size: 28px 28px;
   position: relative;
   cursor: grab;
   border-radius: 0 0 var(--radius) var(--radius);
+  border-top: 1px solid var(--color-border);
 }
 .graph-container:active { cursor: grabbing; }
 
@@ -754,9 +755,9 @@ tbody tr:hover {
   width: 34px;
   height: 34px;
   border-radius: 7px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  color: #374151;
   font-size: 1.25rem;
   font-weight: 700;
   line-height: 1;
@@ -764,15 +765,17 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
   backdrop-filter: blur(6px);
   font-family: inherit;
   user-select: none;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.1);
 }
 .graph-zoom-btn:hover {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.3);
-  color: #f1f5f9;
+  background: #fff;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
 }
 .graph-zoom-btn:active { transform: scale(0.92); }
 .graph-zoom-fit { font-size: 1rem; }
@@ -835,39 +838,39 @@ tbody tr:hover {
 .graph-filter-btn:hover { transform: translateY(-1px); }
 .graph-filter-btn:not(.active) { opacity: 0.32; background: transparent !important; }
 
-/* Updated palette to match new D3 node colours */
-.graph-filter-btn[data-group="portfolio"]              { background: #6366f1; border-color: #6366f1; color: #fff; }
-.graph-filter-btn:not(.active)[data-group="portfolio"] { color: #6366f1; }
-.graph-filter-btn[data-group="stock"]                  { background: #f59e0b; border-color: #f59e0b; color: #fff; }
-.graph-filter-btn:not(.active)[data-group="stock"]     { color: #d97706; border-color: #f59e0b; }
-.graph-filter-btn[data-group="bond"]                   { background: #a855f7; border-color: #a855f7; color: #fff; }
-.graph-filter-btn:not(.active)[data-group="bond"]      { color: #a855f7; }
-.graph-filter-btn[data-group="cash"]                   { background: #10b981; border-color: #10b981; color: #fff; }
-.graph-filter-btn:not(.active)[data-group="cash"]      { color: #10b981; }
-.graph-filter-btn[data-group="sector"]                 { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-.graph-filter-btn:not(.active)[data-group="sector"]    { color: #3b82f6; }
-.graph-filter-btn[data-group="exchange"]               { background: #2dd4bf; border-color: #2dd4bf; color: #0f172a; }
-.graph-filter-btn:not(.active)[data-group="exchange"]  { color: #2dd4bf; border-color: #2dd4bf; }
+/* Palette matches D3 node colours (light-canvas theme) */
+.graph-filter-btn[data-group="portfolio"]              { background: #6366f1; border-color: #4f46e5; color: #fff; }
+.graph-filter-btn:not(.active)[data-group="portfolio"] { color: #6366f1; border-color: #6366f1; }
+.graph-filter-btn[data-group="stock"]                  { background: #d97706; border-color: #b45309; color: #fff; }
+.graph-filter-btn:not(.active)[data-group="stock"]     { color: #d97706; border-color: #d97706; }
+.graph-filter-btn[data-group="bond"]                   { background: #7c3aed; border-color: #6d28d9; color: #fff; }
+.graph-filter-btn:not(.active)[data-group="bond"]      { color: #7c3aed; border-color: #7c3aed; }
+.graph-filter-btn[data-group="cash"]                   { background: #059669; border-color: #047857; color: #fff; }
+.graph-filter-btn:not(.active)[data-group="cash"]      { color: #059669; border-color: #059669; }
+.graph-filter-btn[data-group="sector"]                 { background: #2563eb; border-color: #1d4ed8; color: #fff; }
+.graph-filter-btn:not(.active)[data-group="sector"]    { color: #2563eb; border-color: #2563eb; }
+.graph-filter-btn[data-group="exchange"]               { background: #0891b2; border-color: #0e7490; color: #fff; }
+.graph-filter-btn:not(.active)[data-group="exchange"]  { color: #0891b2; border-color: #0891b2; }
 
 /* ── Tooltip ─────────────────────────────────────────────────────────────── */
 .graph-tooltip {
   position: absolute;
   z-index: 50;
-  background: #1e293b;
-  color: #f1f5f9;
+  background: #ffffff;
+  color: #1f2937;
   border-radius: 9px;
   padding: 11px 15px;
   font-size: 0.8rem;
   line-height: 1.65;
   pointer-events: none;
   max-width: 240px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14), 0 1px 4px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--color-border);
 }
-.graph-tooltip .tt-title { font-weight: 700; font-size: 0.9rem; color: #fff; margin-bottom: 4px; letter-spacing: 0.02em; }
-.graph-tooltip .tt-sub   { font-size: 0.75rem; color: #64748b; letter-spacing: 0.03em; }
-.graph-tooltip .tt-row   { color: #94a3b8; font-size: 0.78rem; }
-.graph-tooltip .tt-row b { color: #e2e8f0; }
+.graph-tooltip .tt-title { font-weight: 700; font-size: 0.9rem; color: #111827; margin-bottom: 4px; letter-spacing: 0.02em; }
+.graph-tooltip .tt-sub   { font-size: 0.75rem; color: #9ca3af; letter-spacing: 0.03em; }
+.graph-tooltip .tt-row   { color: #6b7280; font-size: 0.78rem; }
+.graph-tooltip .tt-row b { color: #1f2937; }
 
 /* ── Legend strip ────────────────────────────────────────────────────────── */
 .graph-legend-card {
@@ -899,19 +902,40 @@ tbody tr:hover {
 
 .graph-dot {
   display: inline-block;
-  width: 13px;
-  height: 13px;
-  border-radius: 3px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
 }
 
-/* Legend dots updated to match new palette */
-.graph-dot-portfolio { background: #6366f1; }
-.graph-dot-stock     { background: #f59e0b; }
-.graph-dot-bond      { background: #a855f7; }
-.graph-dot-cash      { background: #10b981; }
-.graph-dot-sector    { background: #3b82f6; }
-.graph-dot-exchange  { background: #2dd4bf; }
+/* Legend icons — shape + color match actual D3 nodes */
+.graph-dot-portfolio {
+  background: #6366f1;
+  border-radius: 3px;
+  width: 20px;
+  height: 12px;
+}
+.graph-dot-stock {
+  background: #d97706;
+  border-radius: 50%;
+}
+.graph-dot-bond {
+  background: #7c3aed;
+  border-radius: 50%;
+}
+.graph-dot-cash {
+  background: #059669;
+  border-radius: 50%;
+}
+.graph-dot-sector {
+  background: #2563eb;
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  border-radius: 0;
+}
+.graph-dot-exchange {
+  background: #0891b2;
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  border-radius: 0;
+}
 
 /* ── Table search filter ────────────────────────────────────────────────── */
 
