@@ -13,15 +13,12 @@ public class StockRequest {
     @Size(max = 32, message = "symbol must be <= 32 chars")
     private String symbol;
 
-    @NotBlank(message = "name is required")
     @Size(max = 128, message = "name must be <= 128 chars")
     private String name;
 
-    @NotBlank(message = "sector is required")
     @Size(max = 64, message = "sector must be <= 64 chars")
     private String sector;
 
-    @NotBlank(message = "exchange is required")
     @Size(max = 64, message = "exchange must be <= 64 chars")
     private String exchange;
 

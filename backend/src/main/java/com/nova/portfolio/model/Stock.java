@@ -20,13 +20,13 @@ public class Stock extends BaseTimeEntity {
     @Column(nullable = false, length = 32, unique = true)
     private String symbol;
 
-    @Column(nullable = false, length = 128)
+    @Column(length = 128)
     private String name;
 
-    @Column(nullable = false, length = 64)
+    @Column(length = 64)
     private String sector;
 
-    @Column(nullable = false, length = 64)
+    @Column(length = 64)
     private String exchange;
 
     @Column(nullable = false, precision = 19, scale = 4)

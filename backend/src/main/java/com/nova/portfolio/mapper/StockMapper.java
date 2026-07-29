@@ -12,9 +12,9 @@ public final class StockMapper {
     public static Stock toEntity(StockRequest request) {
         Stock stock = new Stock();
         stock.setSymbol(request.getSymbol());
-        stock.setName(request.getName());
-        stock.setSector(request.getSector());
-        stock.setExchange(request.getExchange());
+        stock.setName(normalizeOptional(request.getName()));
+        stock.setSector(normalizeOptional(request.getSector()));
+        stock.setExchange(normalizeOptional(request.getExchange()));
         stock.setPrice(request.getPrice());
         stock.setMarketCap(request.getMarketCap());
         return stock;
@@ -22,11 +22,19 @@ public final class StockMapper {
 
     public static void updateEntity(Stock entity, StockRequest request) {
         entity.setSymbol(request.getSymbol());
-        entity.setName(request.getName());
-        entity.setSector(request.getSector());
-        entity.setExchange(request.getExchange());
+        entity.setName(normalizeOptional(request.getName()));
+        entity.setSector(normalizeOptional(request.getSector()));
+        entity.setExchange(normalizeOptional(request.getExchange()));
         entity.setPrice(request.getPrice());
         entity.setMarketCap(request.getMarketCap());
+    }
+
+    private static String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     public static StockResponse toResponse(Stock entity) {
