@@ -427,6 +427,30 @@ tbody tr:hover {
   gap: 16px;
   margin-bottom: 20px;
 }
+
+.portfolio-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(260px, 1fr) minmax(0, 1.8fr);
+  gap: 16px;
+  margin-bottom: 20px;
+  align-items: stretch;
+}
+
+.portfolio-metric-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.portfolio-line-card {
+  min-height: 100%;
+}
+
+#portfolio-line-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
 .summary-card {
   display: flex;
   flex-direction: column;
@@ -685,6 +709,9 @@ tbody tr:hover {
   .dashboard-card-pie {
     grid-column: auto;
   }
+  .portfolio-summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
@@ -817,6 +844,18 @@ tbody tr:hover {
   border-top: 1px solid var(--color-border);
 }
 
+.graph-filter-row-advanced {
+  border-top-style: dashed;
+  opacity: 0.9;
+}
+
+.graph-filter-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--color-border);
+  margin: 0 4px;
+}
+
 .graph-filter-label {
   font-size: 0.78rem;
   font-weight: 700;
@@ -853,6 +892,10 @@ tbody tr:hover {
 .graph-filter-btn:not(.active)[data-group="sector"]    { color: #2563eb; border-color: #2563eb; }
 .graph-filter-btn[data-group="exchange"]               { background: #0891b2; border-color: #0e7490; color: #fff; }
 .graph-filter-btn:not(.active)[data-group="exchange"]  { color: #0891b2; border-color: #0891b2; }
+.graph-filter-btn[data-group="transaction-buy"]              { background: #0ea5e9; border-color: #0284c7; color: #fff; }
+.graph-filter-btn:not(.active)[data-group="transaction-buy"] { color: #0ea5e9; border-color: #0ea5e9; }
+.graph-filter-btn[data-group="transaction-sell"]              { background: #ef4444; border-color: #dc2626; color: #fff; }
+.graph-filter-btn:not(.active)[data-group="transaction-sell"] { color: #ef4444; border-color: #ef4444; }
 
 /* ── Tooltip ─────────────────────────────────────────────────────────────── */
 .graph-tooltip {
@@ -911,6 +954,14 @@ tbody tr:hover {
   color: var(--color-muted);
   font-weight: 400;
   font-size: 0.8rem;
+}
+
+.graph-legend-item em {
+  font-style: normal;
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+  margin-left: 2px;
 }
 
 .graph-dot {
