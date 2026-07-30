@@ -1,4 +1,6 @@
 spring:
+  profiles:
+    active: dev
   application:
     name: portfolio
   datasource:
@@ -20,4 +22,11 @@ server:
 openexchangerates:
   base-url: https://openexchangerates.org/api
   app-id: ${OXR_APP_ID:a66ae9ab55ba41cd93d76b34a79dbc4d}
+
+ai:
+  base-url: ${AI_BASE_URL:https://api.deepseek.com}
+  api-key: ${AI_API_KEY:sk-b31eb0ca883744628cfb470e1441b873}
+  model: ${AI_MODEL:deepseek-v4-flash}
+  connect-timeout-ms: 3000
+  read-timeout-ms: 15000
 

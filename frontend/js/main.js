@@ -697,17 +697,49 @@ function bindPortfoliosEvents(app) {
 // ---------------------------------------------------------------------------
 
 
+function renderAnomalyItem(anomaly) {
+  const severity = anomaly.severity || 'LOW';
+  const assetType = anomaly.assetType || '';
+  const transactionType = anomaly.transactionType || '';
+  const reasons = Array.isArray(anomaly.reasons) ? anomaly.reasons : [];
+  return `
+    <div class="ai-anomaly-item">
+      <div class="ai-anomaly-head">
+        <span class="badge badge-risk-${severity.toLowerCase()}">${severity}</span>
+        <span class="badge badge-${assetType.toLowerCase()}">${assetType}</span>
+        <span class="badge badge-${transactionType.toLowerCase()}">${transactionType}</span>
+        <span class="ai-anomaly-date">${escapeHtml(anomaly.transactionDate)}</span>
+      </div>
+      ${reasons.length ? `<p class="ai-anomaly-reasons">${escapeHtml(reasons.join('; '))}</p>` : ''}
+    </div>
+  `;
+}
+
+function renderAnomaliesList(anomalies) {
+  if (!anomalies || anomalies.length === 0) {
+    return emptyState('No anomalies detected in recent transactions.');
+  }
+  return anomalies.map(renderAnomalyItem).join('');
+}
+
+function renderAiSourceBadge(source) {
+  const isAi = source === 'AI';
+  return `<span class="badge badge-source-${isAi ? 'ai' : 'rule'}">${isAi ? 'AI generated' : 'Rule-based'}</span>`;
+}
+
 async function renderPortfolioDetailView(app, portfolioId, options = {}) {
   const { silentRefresh = false, skipRefreshTimerSetup = false } = options;
   if (!silentRefresh) {
     app.innerHTML = renderLoading();
   }
 
-  const [portfolioSummary, stocks, bonds, cashAssets] = await Promise.all([
+  const [portfolioSummary, stocks, bonds, cashAssets, aiForecast, aiAnomalies] = await Promise.all([
     PortfolioApi.summary(portfolioId),
     StockApi.list(),
     BondApi.list(),
     CashAssetApi.list(),
+    AiApi.forecast(portfolioId, 12).catch(() => null),
+    AiApi.anomalies(portfolioId).catch(() => []),
   ]);
 
   state.stocks = stocks;
@@ -723,6 +755,9 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
   const hasAnyAsset = stocks.length + bonds.length + cashAssets.length > 0;
   const portfolioTrendHistory = appendPortfolioSnapshot(portfolioId, loadPortfolioHistory(portfolioId), totalValue);
   const portfolioTrendPoints = buildDashboardTrend(portfolioTrendHistory);
+  const forecastMeta = aiForecast
+    ? `Assumed annual return ${aiForecast.assumedAnnualReturnPercent}% &middot; volatility ${aiForecast.assumedAnnualVolatilityPercent}%. ${escapeHtml(aiForecast.disclaimer || '')}`
+    : 'Forecast unavailable right now.';
 
   app.innerHTML = `
     <div class="page-header">
@@ -732,7 +767,7 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
       ${portfolio.description ? `<p class="subtitle">${escapeHtml(portfolio.description)}</p>` : ''}
     </div>
 
-    <section class="portfolio-summary-grid">
+  <section class="portfolio-summary-grid">
       <div class="portfolio-metric-stack">
         <div class="card summary-card">
           <span class="summary-label">Total Market Value</span>
@@ -767,6 +802,68 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
         </div>
         <canvas id="portfolio-line-chart" width="560" height="280"></canvas>
       </article>
+    </section>
+
+    <section class="card ai-panel">
+      <div class="card-heading-row">
+        <h2>AI Insights</h2>
+        <span class="card-note">Automated analysis for illustration only &mdash; not financial advice.</span>
+      </div>
+
+      <div class="ai-panel-grid">
+        <div class="ai-block">
+          <div class="ai-block-header">
+            <h3>Value Forecast</h3>
+            <select id="ai-forecast-horizon">
+              <option value="3">3 months</option>
+              <option value="6">6 months</option>
+              <option value="12" selected>12 months</option>
+              <option value="24">24 months</option>
+            </select>
+          </div>
+          <canvas id="ai-forecast-chart" width="440" height="220"></canvas>
+          <p class="card-note" id="ai-forecast-meta">${forecastMeta}</p>
+        </div>
+
+        <div class="ai-block">
+          <h3>Anomaly Detection</h3>
+          <div id="ai-anomalies-list">${renderAnomaliesList(aiAnomalies)}</div>
+        </div>
+      </div>
+
+      <div class="ai-panel-grid">
+        <div class="ai-block">
+          <div class="ai-block-header">
+            <h3>Investment Advice</h3>
+            <button type="button" class="btn btn-secondary btn-sm" id="ai-advice-btn">${buttonLabel('plus-circle', 'Generate')}</button>
+          </div>
+          <div id="ai-advice-result" class="ai-result-placeholder">Click Generate for automated observations about this portfolio.</div>
+        </div>
+
+        <div class="ai-block">
+          <div class="ai-block-header">
+            <h3>Activity Summary</h3>
+            <div class="ai-inline-controls">
+              <select id="ai-summary-days">
+                <option value="7">7 days</option>
+                <option value="30" selected>30 days</option>
+                <option value="90">90 days</option>
+              </select>
+              <button type="button" class="btn btn-secondary btn-sm" id="ai-summary-btn">${buttonLabel('plus-circle', 'Generate')}</button>
+            </div>
+          </div>
+          <div id="ai-summary-result" class="ai-result-placeholder">Click Generate for a plain-English activity recap.</div>
+        </div>
+      </div>
+
+      <div class="ai-block">
+        <h3>Ask about this portfolio</h3>
+        <form id="ai-query-form" class="ai-query-form">
+          <input type="text" id="ai-query-input" name="question" maxlength="500" placeholder="e.g. What is my biggest holding?" required />
+          <button type="submit" class="btn btn-primary btn-sm" id="ai-query-btn">${buttonLabel('plus-circle', 'Ask')}</button>
+        </form>
+        <div id="ai-query-result"></div>
+      </div>
     </section>
 
     <section class="card">
@@ -840,11 +937,13 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
   `;
 
   drawAllocationChart(document.getElementById('allocation-chart'), allocation);
+  drawForecastChart(document.getElementById('ai-forecast-chart'), aiForecast ? aiForecast.points : []);
   drawLineChart(document.getElementById('portfolio-line-chart'), portfolioTrendPoints);
   if (!skipRefreshTimerSetup) {
     startPortfolioDetailRefresh(app, portfolioId);
   }
   bindHoldingEvents(app, portfolioId, enriched);
+  bindAiPanelEvents(app, portfolioId);
 }
 
 function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
@@ -933,6 +1032,118 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
         showToast(err.message, 'error');
       }
     });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// AI Insights panel (portfolio detail view)
+// ---------------------------------------------------------------------------
+
+async function refreshAiForecast(app, portfolioId, horizonMonths) {
+  const canvas = app.querySelector('#ai-forecast-chart');
+  const metaEl = app.querySelector('#ai-forecast-meta');
+  try {
+    const forecast = await AiApi.forecast(portfolioId, horizonMonths);
+    drawForecastChart(canvas, forecast.points || []);
+    if (metaEl) {
+      metaEl.innerHTML = `Assumed annual return ${forecast.assumedAnnualReturnPercent}% &middot; volatility ${forecast.assumedAnnualVolatilityPercent}%. ${escapeHtml(forecast.disclaimer || '')}`;
+    }
+  } catch (err) {
+    drawForecastChart(canvas, []);
+    if (metaEl) metaEl.textContent = 'Forecast unavailable right now.';
+    showToast(err.message || 'Failed to load forecast', 'error');
+  }
+}
+
+async function generateAiAdvice(app, portfolioId, button) {
+  const resultEl = app.querySelector('#ai-advice-result');
+  setButtonLabel(button, 'plus-circle', 'Generating…');
+  button.disabled = true;
+  try {
+    const advice = await AiApi.advice(portfolioId);
+    const signals = Array.isArray(advice.signals) ? advice.signals : [];
+    resultEl.className = 'ai-result';
+    resultEl.innerHTML = `
+      <div class="ai-result-meta">${renderAiSourceBadge(advice.source)}</div>
+      <p>${escapeHtml(advice.advice)}</p>
+      ${signals.length ? `<ul class="ai-signal-list">${signals.map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>` : ''}
+      <p class="card-note">${escapeHtml(advice.disclaimer || '')}</p>
+    `;
+  } catch (err) {
+    showToast(err.message || 'Failed to generate advice', 'error');
+  } finally {
+    setButtonLabel(button, 'plus-circle', 'Generate');
+    button.disabled = false;
+  }
+}
+
+async function generateAiSummary(app, portfolioId, button, daysSelect) {
+  const resultEl = app.querySelector('#ai-summary-result');
+  const days = Number(daysSelect.value) || 30;
+  setButtonLabel(button, 'plus-circle', 'Generating…');
+  button.disabled = true;
+  try {
+    const summary = await AiApi.summary(portfolioId, days);
+    resultEl.className = 'ai-result';
+    resultEl.innerHTML = `
+      <div class="ai-result-meta">
+        ${renderAiSourceBadge(summary.source)}
+        <span class="card-note">${summary.periodDays} day(s) &middot; ${summary.buyCount} buy(s), ${summary.sellCount} sell(s)</span>
+      </div>
+      <p>${escapeHtml(summary.summary)}</p>
+      <p class="card-note">Net cash flow: <span class="${pnlClass(summary.netCashFlow)}">${formatSignedMoney(summary.netCashFlow)}</span>${summary.mostActiveAsset ? ` &middot; Most active: ${escapeHtml(summary.mostActiveAsset)}` : ''}</p>
+    `;
+  } catch (err) {
+    showToast(err.message || 'Failed to generate summary', 'error');
+  } finally {
+    setButtonLabel(button, 'plus-circle', 'Generate');
+    button.disabled = false;
+  }
+}
+
+async function submitAiQuery(app, portfolioId, form) {
+  const input = form.elements.question;
+  const button = form.querySelector('#ai-query-btn');
+  const resultEl = app.querySelector('#ai-query-result');
+  const question = input.value.trim();
+  if (!question) return;
+  setButtonLabel(button, 'plus-circle', 'Asking…');
+  button.disabled = true;
+  try {
+    const response = await AiApi.query(portfolioId, question);
+    resultEl.innerHTML = `
+      <div class="ai-query-answer">
+        <p class="ai-query-question">Q: ${escapeHtml(response.question)}</p>
+        <p>${escapeHtml(response.answer)}</p>
+      </div>
+    `;
+    input.value = '';
+  } catch (err) {
+    resultEl.innerHTML = `<p class="card-note">${escapeHtml(err.message || 'Failed to answer question')}</p>`;
+    showToast(err.message || 'Failed to answer question', 'error');
+  } finally {
+    setButtonLabel(button, 'plus-circle', 'Ask');
+    button.disabled = false;
+  }
+}
+
+function bindAiPanelEvents(app, portfolioId) {
+  const horizonSelect = app.querySelector('#ai-forecast-horizon');
+  const adviceBtn = app.querySelector('#ai-advice-btn');
+  const summaryBtn = app.querySelector('#ai-summary-btn');
+  const summaryDaysSelect = app.querySelector('#ai-summary-days');
+  const queryForm = app.querySelector('#ai-query-form');
+
+  horizonSelect.addEventListener('change', () => {
+    refreshAiForecast(app, portfolioId, Number(horizonSelect.value));
+  });
+
+  adviceBtn.addEventListener('click', () => generateAiAdvice(app, portfolioId, adviceBtn));
+  summaryBtn.addEventListener('click', () => generateAiSummary(app, portfolioId, summaryBtn, summaryDaysSelect));
+
+  queryForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    submitAiQuery(app, portfolioId, queryForm);
   });
 }
 

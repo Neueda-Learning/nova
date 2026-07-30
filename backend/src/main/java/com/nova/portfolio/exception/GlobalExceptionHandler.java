@@ -29,6 +29,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(error);
     }
 
+    @ExceptionHandler(AiServiceException.class)
+    public ResponseEntity<ApiError> handleAiService(AiServiceException ex, HttpServletRequest request) {
+        HttpStatus status = switch (ex.getStatusCode()) {
+            case 401, 403 -> HttpStatus.BAD_GATEWAY;
+            case 429 -> HttpStatus.TOO_MANY_REQUESTS;
+            case 503 -> HttpStatus.SERVICE_UNAVAILABLE;
+            case 502 -> HttpStatus.BAD_GATEWAY;
+            default  -> HttpStatus.INTERNAL_SERVER_ERROR;
+        };
+        ApiError error = new ApiError(Instant.now(), status.value(), status.getReasonPhrase(),
+                ex.getMessage(), request.getRequestURI());
+        return ResponseEntity.status(status).body(error);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
         ApiError error = new ApiError(
