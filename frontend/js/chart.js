@@ -253,3 +253,113 @@ function drawLineChart(canvas, points) {
   }
 }
 
+// Renders an AI-generated portfolio value forecast: a central projected-value line with a
+// shaded lower/upper confidence band, plotted against the forecast horizon in months.
+function drawForecastChart(canvas, points) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+
+  if (!points || points.length === 0) {
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('No forecast data available', width / 2, height / 2);
+    return;
+  }
+
+  const padding = { top: 18, right: 24, bottom: 32, left: 70 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const axisY = height - padding.bottom;
+
+  const upperValues = points.map((p) => Number(p.upperBound) || 0);
+  const lowerValues = points.map((p) => Number(p.lowerBound) || 0);
+  const minValue = Math.min(...lowerValues, 0);
+  const rawMax = Math.max(...upperValues, 0);
+  const maxValue = rawMax <= 0 ? 1 : rawMax * 1.05;
+  const range = (maxValue - minValue) || 1;
+
+  const xFor = (index) => padding.left + (points.length === 1 ? chartWidth / 2 : (index / (points.length - 1)) * chartWidth);
+  const yFor = (value) => padding.top + chartHeight - ((value - minValue) / range) * chartHeight;
+
+  // Axes
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding.left, padding.top);
+  ctx.lineTo(padding.left, axisY);
+  ctx.lineTo(width - padding.right, axisY);
+  ctx.stroke();
+
+  // Y-axis grid + labels
+  const gridLines = 4;
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i <= gridLines; i += 1) {
+    const value = minValue + (range / gridLines) * i;
+    const y = yFor(value);
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(width - padding.right, y);
+    ctx.stroke();
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(value.toLocaleString(undefined, { maximumFractionDigits: 0 }), padding.left - 8, y);
+  }
+
+  // Shaded lower/upper confidence band
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const x = xFor(i);
+    const y = yFor(Number(p.upperBound) || 0);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  for (let i = points.length - 1; i >= 0; i -= 1) {
+    ctx.lineTo(xFor(i), yFor(Number(points[i].lowerBound) || 0));
+  }
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(37, 99, 235, 0.14)';
+  ctx.fill();
+
+  // Central projected-value line
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const x = xFor(i);
+    const y = yFor(Number(p.projectedValue) || 0);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  points.forEach((p, i) => {
+    ctx.beginPath();
+    ctx.arc(xFor(i), yFor(Number(p.projectedValue) || 0), 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#2563eb';
+    ctx.fill();
+  });
+
+  // X-axis month labels, thinned out so they don't overlap on long horizons
+  ctx.fillStyle = '#64748b';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const labelStep = Math.max(1, Math.ceil(points.length / 8));
+  points.forEach((p, i) => {
+    if (i % labelStep === 0 || i === points.length - 1) {
+      ctx.fillText(`M${p.month}`, xFor(i), axisY + 8);
+    }
+  });
+}
+
+

@@ -9,7 +9,7 @@ services:
       MYSQL_PASSWORD: 12345678
       MYSQL_ROOT_PASSWORD: 87654321
     ports:
-      - "13306:3306"
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
 
