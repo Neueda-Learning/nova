@@ -427,6 +427,30 @@ tbody tr:hover {
   gap: 16px;
   margin-bottom: 20px;
 }
+
+.portfolio-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(260px, 1fr) minmax(0, 1.8fr);
+  gap: 16px;
+  margin-bottom: 20px;
+  align-items: stretch;
+}
+
+.portfolio-metric-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.portfolio-line-card {
+  min-height: 100%;
+}
+
+#portfolio-line-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
 .summary-card {
   display: flex;
   flex-direction: column;
@@ -684,6 +708,9 @@ tbody tr:hover {
   .dashboard-card-line,
   .dashboard-card-pie {
     grid-column: auto;
+  }
+  .portfolio-summary-grid {
+    grid-template-columns: 1fr;
   }
 }
 

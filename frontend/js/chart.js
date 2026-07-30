@@ -239,11 +239,13 @@ function drawLineChart(canvas, points) {
   if (entries.length > 0) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
+    const firstTs = entries[0].ts;
+    const dayInMs = 86400000; // milliseconds in a day
     coords.forEach((coord, index) => {
       ctx.fillStyle = '#64748b';
-      const label = new Date(coord.point.ts).toLocaleString(undefined, useDayLabels
-        ? { month: 'short', day: 'numeric' }
-        : { month: 'short', day: 'numeric', hour: '2-digit' });
+      // Calculate day number relative to first data point (1-based)
+      const dayDiff = Math.floor((coord.point.ts - firstTs) / dayInMs) + 1;
+      const label = `Day ${dayDiff}`;
       if (index === 0 || index === coords.length - 1 || index % Math.max(1, Math.ceil(coords.length / 6)) === 0) {
         ctx.fillText(label, coord.x, axisY + 12);
       }
