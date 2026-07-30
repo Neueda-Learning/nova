@@ -748,7 +748,7 @@ async function renderPortfolioDetailView(app, portfolioId) {
   `;
 
   drawAllocationChart(document.getElementById('allocation-chart'), allocation);
-  bindHoldingEvents(app, portfolioId, enriched);
+  bindHoldingEvents(app, portfolioId, enrichedHoldings);
 }
 
 function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
@@ -884,19 +884,27 @@ async function renderStocksView(app) {
             autocomplete="off" list="stock-name-list" />
           <datalist id="stock-name-list">${stockNameOptions}</datalist>
         </div>
-        <div class="form-field">
-          <label for="sector">Sector</label>
-          <input id="sector" name="sector" type="text" maxlength="64"
-            placeholder="Technology"
-            autocomplete="off" list="stock-sector-list" />
-          <datalist id="stock-sector-list">${stockSectorOptions}</datalist>
+        <div class="form-actions" style="grid-column:1/-1;justify-content:flex-start;">
+          <button type="button" class="btn btn-sm btn-secondary" id="stock-advanced-toggle" aria-expanded="false">Show advanced fields</button>
+          <span class="hint" style="margin:0;">Advanced fields include sector and exchange for analytics/graph grouping.</span>
         </div>
-        <div class="form-field">
-          <label for="exchange">Exchange</label>
-          <input id="exchange" name="exchange" type="text" maxlength="64"
-            placeholder="NASDAQ"
-            autocomplete="off" list="stock-exchange-list" />
-          <datalist id="stock-exchange-list">${stockExchangeOptions}</datalist>
+        <div id="stock-advanced-fields" class="hidden" style="grid-column:1/-1;">
+          <div class="form-grid" style="padding-top:6px;">
+            <div class="form-field">
+              <label for="sector">Sector</label>
+              <input id="sector" name="sector" type="text" maxlength="64"
+                placeholder="Technology"
+                autocomplete="off" list="stock-sector-list" />
+              <datalist id="stock-sector-list">${stockSectorOptions}</datalist>
+            </div>
+            <div class="form-field">
+              <label for="exchange">Exchange</label>
+              <input id="exchange" name="exchange" type="text" maxlength="64"
+                placeholder="NASDAQ"
+                autocomplete="off" list="stock-exchange-list" />
+              <datalist id="stock-exchange-list">${stockExchangeOptions}</datalist>
+            </div>
+          </div>
         </div>
         <div class="form-field">
           <label for="price">Price</label>
@@ -952,7 +960,22 @@ function bindStocksEvents(app) {
   const form = app.querySelector('#stock-form');
   const cancelBtn = app.querySelector('#stock-cancel-btn');
   const submitBtn = app.querySelector('#stock-submit-btn');
+  const advancedToggleBtn = app.querySelector('#stock-advanced-toggle');
+  const advancedFields = app.querySelector('#stock-advanced-fields');
   bindTenthsInput(form.elements.price);
+
+  let advancedOpen = false;
+  function setAdvancedOpen(open) {
+    advancedOpen = Boolean(open);
+    if (!advancedFields || !advancedToggleBtn) return;
+    advancedFields.classList.toggle('hidden', !advancedOpen);
+    advancedToggleBtn.setAttribute('aria-expanded', String(advancedOpen));
+    advancedToggleBtn.textContent = advancedOpen ? 'Hide advanced fields' : 'Show advanced fields';
+  }
+  setAdvancedOpen(false);
+  if (advancedToggleBtn) {
+    advancedToggleBtn.addEventListener('click', () => setAdvancedOpen(!advancedOpen));
+  }
 
   // Symbol / company name / sector / exchange are a strongly-bound tuple in STOCK_REFERENCE_DATA:
   // picking a preset value for any one of them (via its <datalist>) auto-fills the other three
@@ -1017,6 +1040,7 @@ function bindStocksEvents(app) {
   });
 
   cancelBtn.addEventListener('click', () => resetForm(form, submitBtn, cancelBtn, 'plus-circle', 'Create Stock'));
+  cancelBtn.addEventListener('click', () => setAdvancedOpen(false));
 
   app.querySelectorAll('button[data-action="edit"]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1029,6 +1053,7 @@ function bindStocksEvents(app) {
       form.elements.exchange.value = stock.exchange;
       form.elements.price.value = toTenths(stock.price);
       form.elements.marketCap.value = stock.marketCap !== null && stock.marketCap !== undefined ? stock.marketCap : '';
+      if (stock.sector || stock.exchange) setAdvancedOpen(true);
       setButtonLabel(submitBtn, 'pencil-square', 'Update Stock');
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1429,6 +1454,31 @@ function assetLabelFor(assetType, assetId) {
   return item.currency;
 }
 
+function assetShortLabelFor(assetType, assetId) {
+  const item = assetOptionsFor(assetType).find((a) => a.id === assetId);
+  if (!item) return `#${assetId}`;
+  if (assetType === 'STOCK') return item.symbol || `#${assetId}`;
+  if (assetType === 'BOND') {
+    const name = item.name || `Bond #${assetId}`;
+    return name.length > 14 ? `${name.slice(0, 12)}…` : name;
+  }
+  return item.currency || `#${assetId}`;
+}
+
+function formatIsoDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildTransactionNodeLabel(transaction) {
+  const action = transaction?.transactionType || 'TXN';
+  const assetShortName = assetShortLabelFor(transaction?.assetType, transaction?.assetId);
+  const dateLabel = formatIsoDate(transaction?.transactionDate);
+  return [action, assetShortName, dateLabel].filter(Boolean).join(' ');
+}
+
 async function renderTransactionsView(app) {
   app.innerHTML = renderLoading();
 
@@ -1618,13 +1668,20 @@ async function renderGraphView(app) {
   app.innerHTML = renderLoading();
 
   try {
-    const [portfolios, holdings, stocks, bonds, cashAssets] = await Promise.all([
+    const [portfolios, holdings, stocks, bonds, cashAssets, transactions] = await Promise.all([
       PortfolioApi.list(),
       HoldingApi.list(),
       StockApi.list(),
       BondApi.list(),
       CashAssetApi.list(),
+      TransactionApi.list(),
     ]);
+
+    state.portfolios = portfolios;
+    state.stocks = stocks;
+    state.bonds = bonds;
+    state.cashAssets = cashAssets;
+    state.transactions = transactions;
 
     const nodes = [];
     const links = [];
@@ -1662,6 +1719,43 @@ async function renderGraphView(app) {
       nodes.push({ id: `c${c.id}`, label: c.currency, group: 'cash', meta: c });
     });
 
+    const portfolioNameById = new Map(portfolios.map((p) => [p.id, p.portfolioName]));
+    const enrichedTransactions = [...transactions]
+      .sort((a, b) => new Date(a.transactionDate) - new Date(b.transactionDate))
+      .map((t) => ({
+        ...t,
+        portfolioName: portfolioNameById.get(t.portfolioId) || `#${t.portfolioId}`,
+        total: Number(t.quantity) * Number(t.price),
+      }));
+    const buyTransactionCount = enrichedTransactions.filter((t) => t.transactionType === 'BUY').length;
+    const sellTransactionCount = enrichedTransactions.filter((t) => t.transactionType === 'SELL').length;
+
+    enrichedTransactions.forEach((t) => {
+      const transactionNodeId = `t${t.id}`;
+      const txnLabel = buildTransactionNodeLabel(t);
+      nodes.push({
+        id: transactionNodeId,
+        label: txnLabel,
+        group: 'transaction',
+        meta: t,
+      });
+      links.push({ source: `p${t.portfolioId}`, target: transactionNodeId, type: 'EXECUTED' });
+
+      let assetNodeId;
+      if (t.assetType === 'STOCK') assetNodeId = `s${t.assetId}`;
+      else if (t.assetType === 'BOND') assetNodeId = `b${t.assetId}`;
+      else if (t.assetType === 'CASH') assetNodeId = `c${t.assetId}`;
+      if (assetNodeId) {
+        links.push({
+          source: transactionNodeId,
+          target: assetNodeId,
+          type: t.transactionType,
+          quantity: t.quantity,
+          price: t.price,
+        });
+      }
+    });
+
     holdings.forEach((h) => {
       let target;
       if (h.assetType === 'STOCK') target = `s${h.assetId}`;
@@ -1676,32 +1770,35 @@ async function renderGraphView(app) {
     app.innerHTML = `
       <div class="page-header">
         <h1>Graph</h1>
-        <p class="subtitle">D3.js force-directed relationship graph &mdash; hover to highlight neighbours, drag to reposition.</p>
+         <p class="subtitle">D3.js force-directed relationship graph &mdash; now includes transaction flow (Portfolio &rarr; Transaction &rarr; Asset) alongside current holdings.</p>
       </div>
 
       <section class="card graph-controls-card">
         <div class="graph-controls-row">
           <div class="graph-legend">
             <span class="graph-legend-item"><span class="graph-dot graph-dot-portfolio"></span>Portfolio</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-transaction-buy"></span>BUY Transaction</span>
+            <span class="graph-legend-item"><span class="graph-dot graph-dot-transaction-sell"></span>SELL Transaction</span>
             <span class="graph-legend-item"><span class="graph-dot graph-dot-stock"></span>Stock</span>
             <span class="graph-legend-item"><span class="graph-dot graph-dot-bond"></span>Bond</span>
             <span class="graph-legend-item"><span class="graph-dot graph-dot-cash"></span>Cash</span>
             <span class="graph-legend-item"><span class="graph-dot graph-dot-sector"></span>Sector</span>
             <span class="graph-legend-item"><span class="graph-dot graph-dot-exchange"></span>Exchange</span>
-            <span class="graph-legend-item graph-legend-hint">&mdash; Solid: HAS &nbsp;&middot;&nbsp; - - Dashed: BELONGS_TO / LISTED_ON</span>
+            <span class="graph-legend-item graph-legend-hint">&mdash; Solid: HAS / BUY / SELL &nbsp;&middot;&nbsp; Dashed: EXECUTED / BELONGS_TO / LISTED_ON</span>
           </div>
           <div class="graph-right-controls">
-            <span class="graph-stat">${nodes.length} nodes &nbsp;&middot;&nbsp; ${links.length} edges</span>
+            <span class="graph-stat">${nodes.length} nodes &nbsp;&middot;&nbsp; ${links.length} edges &nbsp;&middot;&nbsp; ${transactions.length} transactions (${buyTransactionCount} BUY / ${sellTransactionCount} SELL)</span>
           </div>
         </div>
         <div class="graph-filter-row">
           <span class="graph-filter-label">Show:</span>
           <button class="graph-filter-btn active" data-group="portfolio">Portfolio</button>
+          <button class="graph-filter-btn active" data-group="transaction">Transaction</button>
           <button class="graph-filter-btn active" data-group="stock">Stock</button>
           <button class="graph-filter-btn active" data-group="bond">Bond</button>
           <button class="graph-filter-btn active" data-group="cash">Cash</button>
-          <button class="graph-filter-btn active" data-group="sector">Sector</button>
-          <button class="graph-filter-btn active" data-group="exchange">Exchange</button>
+          <button class="graph-filter-btn" data-group="sector">Sector (Advanced)</button>
+          <button class="graph-filter-btn" data-group="exchange">Exchange (Advanced)</button>
         </div>
       </section>
 
@@ -1714,7 +1811,7 @@ async function renderGraphView(app) {
               <button id="graph-fit-btn"  class="graph-zoom-btn graph-zoom-fit" title="Reset zoom">&#x2B1C;</button>
             </div>
           </div>
-        ` : emptyState('No data to visualize. Add portfolios, assets and holdings first.')}
+         ` : emptyState('No data to visualize. Add portfolios, assets, holdings, and transactions first.')}
       </section>
     `;
 
@@ -1732,19 +1829,36 @@ async function renderGraphView(app) {
 
     // ── Light-canvas colour palette (Neo4j style) ───────────────────────────
     const GROUP_CFG = {
-      portfolio: { fill: '#6366f1', stroke: '#4f46e5', r: 0,  shape: 'rect',     fs: 13, fw: '700', ls: '0.02em' },
-      stock:     { fill: '#d97706', stroke: '#b45309', r: 26, shape: 'circle',   fs: 12, fw: '700', ls: '0.06em' },
-      bond:      { fill: '#7c3aed', stroke: '#6d28d9', r: 24, shape: 'circle',   fs: 11, fw: '600', ls: '0.03em' },
-      cash:      { fill: '#059669', stroke: '#047857', r: 24, shape: 'circle',   fs: 12, fw: '700', ls: '0.04em' },
-      sector:    { fill: '#2563eb', stroke: '#1d4ed8', r: 22, shape: 'diamond',  fs: 10, fw: '500', ls: '0.02em' },
-      exchange:  { fill: '#0891b2', stroke: '#0e7490', r: 22, shape: 'triangle', fs: 10, fw: '500', ls: '0.02em' },
+      portfolio: { fill: '#6366f1', stroke: '#4f46e5', r: 0,  shape: 'rect',         fs: 13, fw: '700', ls: '0.02em' },
+      transactionBuy: { fill: '#0ea5e9', stroke: '#0284c7', r: 22, shape: 'triangle',     fs: 10, fw: '700', ls: '0.05em', sw: 2.8 },
+      transactionSell: { fill: '#ef4444', stroke: '#b91c1c', r: 22, shape: 'triangleDown', fs: 10, fw: '700', ls: '0.05em', sw: 2.8 },
+      stock:     { fill: '#d97706', stroke: '#b45309', r: 26, shape: 'circle',       fs: 12, fw: '700', ls: '0.06em' },
+      bond:      { fill: '#7c3aed', stroke: '#6d28d9', r: 24, shape: 'hexagon',      fs: 11, fw: '600', ls: '0.03em' },
+      cash:      { fill: '#059669', stroke: '#047857', r: 24, shape: 'square',       fs: 12, fw: '700', ls: '0.04em' },
+      sector:    { fill: '#2563eb', stroke: '#1d4ed8', r: 22, shape: 'diamond',      fs: 10, fw: '500', ls: '0.02em' },
+      exchange:  { fill: '#0891b2', stroke: '#0e7490', r: 22, shape: 'pentagon',     fs: 10, fw: '500', ls: '0.02em' },
     };
-    const LINK_COLOR = { HAS: '#6366f1', BELONGS_TO: '#94a3b8', LISTED_ON: '#0891b2' };
+    const LINK_COLOR = {
+      HAS: '#6366f1',
+      EXECUTED: '#9ca3af',
+      BUY: '#16a34a',
+      SELL: '#dc2626',
+      BELONGS_TO: '#94a3b8',
+      LISTED_ON: '#0891b2',
+    };
+
+    function getNodeStyle(d) {
+      if (d.group === 'transaction') {
+        return d.meta?.transactionType === 'SELL' ? GROUP_CFG.transactionSell : GROUP_CFG.transactionBuy;
+      }
+      return GROUP_CFG[d.group];
+    }
 
     function nodeRadius(d) {
-      const c = GROUP_CFG[d.group];
+      const c = getNodeStyle(d);
       if (c.shape === 'rect') return 34;
-      if (c.shape === 'diamond' || c.shape === 'triangle') return c.r * 1.6;
+      if (c.shape === 'diamond' || c.shape === 'triangle' || c.shape === 'triangleDown' || c.shape === 'hexagon' || c.shape === 'pentagon' || c.shape === 'square') return c.r * 1.6;
+      if (d.group === 'transaction') return Math.max(c.r, Math.min(58, 20 + String(d.label || '').length * 1.45));
       return c.r;
     }
 
@@ -1754,7 +1868,7 @@ async function renderGraphView(app) {
 
     // Defs: arrowheads + glow filter
     const defs = svg.append('defs');
-    ['HAS', 'BELONGS_TO', 'LISTED_ON'].forEach((type) => {
+    ['HAS', 'EXECUTED', 'BUY', 'SELL', 'BELONGS_TO', 'LISTED_ON'].forEach((type) => {
       defs.append('marker')
         .attr('id', `arr-${type}`).attr('viewBox', '0 -5 10 10')
         .attr('refX', 10).attr('refY', 0).attr('markerWidth', 6).attr('markerHeight', 6)
@@ -1788,8 +1902,12 @@ async function renderGraphView(app) {
     // ── Links ─────────────────────────────────────────────────────────────────
     const linkSel = zoomLayer.append('g').selectAll('line').data(links).join('line')
       .attr('stroke', (l) => LINK_COLOR[l.type])
-      .attr('stroke-width', (l) => l.type === 'HAS' ? 2.5 : 1.5)
-      .attr('stroke-dasharray', (l) => l.type !== 'HAS' ? '6,3' : null)
+      .attr('stroke-width', (l) => {
+        if (l.type === 'HAS') return 2.5;
+        if (l.type === 'BUY' || l.type === 'SELL') return 2.2;
+        return 1.5;
+      })
+      .attr('stroke-dasharray', (l) => (l.type === 'EXECUTED' || l.type === 'BELONGS_TO' || l.type === 'LISTED_ON') ? '6,3' : null)
       .attr('stroke-opacity', 0.6)
       .attr('marker-end', (l) => `url(#arr-${l.type})`);
 
@@ -1810,42 +1928,60 @@ async function renderGraphView(app) {
     // Draw shape
     nodeSel.each(function (d) {
       const g = d3.select(this);
-      const c = GROUP_CFG[d.group];
+      const c = getNodeStyle(d);
       if (c.shape === 'rect') {
         g.append('rect').attr('width', 112).attr('height', 40)
           .attr('x', -56).attr('y', -20).attr('rx', 9)
-          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2.5);
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', c.sw || 2.5);
       } else if (c.shape === 'circle') {
         g.append('circle').attr('r', c.r)
-          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2.5);
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', c.sw || 2.5);
+      } else if (c.shape === 'square') {
+        const s = c.r * 1.35;
+        g.append('rect').attr('width', s * 2).attr('height', s * 2)
+          .attr('x', -s).attr('y', -s).attr('rx', 4)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', c.sw || 2.2);
       } else if (c.shape === 'diamond') {
         const s = c.r * 1.55;
         g.append('polygon').attr('points', `0,${-s} ${s},0 0,${s} ${-s},0`)
-          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2);
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', c.sw || 2);
       } else if (c.shape === 'triangle') {
         const s = c.r * 1.55;
         g.append('polygon').attr('points', `0,${-s} ${s * 0.9},${s * 0.75} ${-s * 0.9},${s * 0.75}`)
-          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', 2);
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', c.sw || 2);
+      } else if (c.shape === 'triangleDown') {
+        const s = c.r * 1.55;
+        g.append('polygon').attr('points', `${-s * 0.9},${-s * 0.75} ${s * 0.9},${-s * 0.75} 0,${s}`)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', c.sw || 2);
+      } else if (c.shape === 'hexagon') {
+        const s = c.r * 1.3;
+        g.append('polygon').attr('points', `${-s},0 ${-s * 0.5},${-s * 0.86} ${s * 0.5},${-s * 0.86} ${s},0 ${s * 0.5},${s * 0.86} ${-s * 0.5},${s * 0.86}`)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', c.sw || 2.2);
+      } else if (c.shape === 'pentagon') {
+        const s = c.r * 1.34;
+        g.append('polygon').attr('points', `0,${-s} ${s * 0.95},${-s * 0.22} ${s * 0.58},${s} ${-s * 0.58},${s} ${-s * 0.95},${-s * 0.22}`)
+          .attr('fill', c.fill).attr('stroke', c.stroke).attr('stroke-width', c.sw || 2.2);
       }
     });
 
     // Node labels — white inside rect, dark outside circles/shapes on light canvas
-    nodeSel.append('text').attr('pointer-events', 'none').attr('text-anchor', 'middle')
+    const labelSel = nodeSel.append('text').attr('pointer-events', 'none').attr('text-anchor', 'middle')
       .attr('font-family', 'inherit')
       .attr('dy', (d) => {
-        const c = GROUP_CFG[d.group];
+        const c = getNodeStyle(d);
         if (c.shape === 'rect') return '0.38em';
         if (c.shape === 'circle') return c.r + 16;
         return c.r * 1.7 + 14;
       })
-      .attr('font-size', (d) => GROUP_CFG[d.group].fs)
-      .attr('font-weight', (d) => GROUP_CFG[d.group].fw)
-      .attr('letter-spacing', (d) => GROUP_CFG[d.group].ls)
+      .attr('font-size', (d) => getNodeStyle(d).fs)
+      .attr('font-weight', (d) => getNodeStyle(d).fw)
+      .attr('letter-spacing', (d) => getNodeStyle(d).ls)
       .attr('fill', (d) => {
-        const c = GROUP_CFG[d.group];
+        const c = getNodeStyle(d);
         if (c.shape === 'rect') return '#ffffff';   // white text inside colored rect
         return '#1e293b';                            // dark text outside all other shapes
       })
+      .attr('class', (d) => d.group === 'transaction' ? 'graph-node-label graph-node-label-transaction' : 'graph-node-label')
       .text((d) => d.label);
 
     // ── Tooltip ───────────────────────────────────────────────────────────────
@@ -1856,6 +1992,13 @@ async function renderGraphView(app) {
       const m = d.meta || {};
       if (d.group === 'portfolio')
         return `<div class="tt-title">${escapeHtml(m.portfolioName)}</div><div class="tt-sub">Portfolio</div>`;
+      if (d.group === 'transaction')
+        return `<div class="tt-title">${escapeHtml(m.transactionType)} ${escapeHtml(m.assetType || '')}</div>
+                <div class="tt-row">Date: <b>${escapeHtml(m.transactionDate)}</b></div>
+                <div class="tt-row">Portfolio: <b>${escapeHtml(m.portfolioName)}</b></div>
+                <div class="tt-row">Asset: <b>${escapeHtml(assetLabelFor(m.assetType, m.assetId))}</b></div>
+                <div class="tt-row">Qty: <b>${formatMoney(m.quantity)}</b> @ <b>${formatMoney(m.price)}</b></div>
+                <div class="tt-row">Total: <b>${formatMoney(m.total)}</b></div>`;
       if (d.group === 'stock')
         return `<div class="tt-title">${escapeHtml(m.symbol)}</div>
                 <div class="tt-row">${escapeHtml(m.name)}</div>
@@ -1936,10 +2079,34 @@ async function renderGraphView(app) {
         .attr('y', (l) => (l.source.y + l.target.y) / 2);
 
       nodeSel.attr('transform', (d) => `translate(${d.x},${d.y})`);
+
+      const visibleTransactionBounds = [];
+      labelSel.each(function (d) {
+        if (d.group !== 'transaction') return;
+        const label = d3.select(this);
+        const text = String(d.label || '');
+        const width = Math.max(84, text.length * 6.9);
+        const height = 14;
+        const transactionStyle = getNodeStyle(d);
+        const bounds = {
+          left: d.x - (width / 2),
+          right: d.x + (width / 2),
+          top: d.y + transactionStyle.r + 8,
+          bottom: d.y + transactionStyle.r + 8 + height,
+        };
+        const overlaps = visibleTransactionBounds.some((box) => (
+          bounds.left < box.right &&
+          bounds.right > box.left &&
+          bounds.top < box.bottom &&
+          bounds.bottom > box.top
+        ));
+        label.style('opacity', overlaps ? 0 : 1);
+        if (!overlaps) visibleTransactionBounds.push(bounds);
+      });
     });
 
     // ── Filter buttons ────────────────────────────────────────────────────────
-    const visible = new Set(['portfolio', 'stock', 'bond', 'cash', 'sector', 'exchange']);
+    const visible = new Set(['portfolio', 'transaction', 'stock', 'bond', 'cash']);
 
     function applyVisibility() {
       nodeSel.style('display', (d) => visible.has(d.group) ? null : 'none');
@@ -1960,6 +2127,9 @@ async function renderGraphView(app) {
         applyVisibility();
       });
     });
+
+    applyVisibility();
+
 
     // ── Reset zoom button ─────────────────────────────────────────────────────
     document.getElementById('graph-zoom-in').addEventListener('click', () => {
