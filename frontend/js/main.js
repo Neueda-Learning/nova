@@ -733,11 +733,12 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
     app.innerHTML = renderLoading();
   }
 
-  const [portfolioSummary, stocks, bonds, cashAssets, aiForecast, aiAnomalies] = await Promise.all([
+  const [portfolioSummary, stocks, bonds, cashAssets, transactions, aiForecast, aiAnomalies] = await Promise.all([
     PortfolioApi.summary(portfolioId),
     StockApi.list(),
     BondApi.list(),
     CashAssetApi.list(),
+    TransactionApi.list().catch(() => []),
     AiApi.forecast(portfolioId, 12).catch(() => null),
     AiApi.anomalies(portfolioId).catch(() => []),
   ]);
@@ -745,6 +746,7 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
   state.stocks = stocks;
   state.bonds = bonds;
   state.cashAssets = cashAssets;
+  state.transactions = Array.isArray(transactions) ? transactions : [];
 
   const portfolio = portfolioSummary;
   const enriched = Array.isArray(portfolioSummary.holdings) ? portfolioSummary.holdings : [];
@@ -893,17 +895,13 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
           <label for="averageCost">Average cost (per unit)</label>
           <input id="averageCost" name="averageCost" type="number" step="0.0001" min="0" required placeholder="150.00" />
         </div>
-        <div class="form-field">
-          <label for="averageCost">Average cost (per unit)</label>
-          <input id="averageCost" name="averageCost" type="number" step="0.0001" min="0" required placeholder="150.00" />
-        </div>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary" id="holding-submit-btn">${buttonLabel('plus-circle', 'Add Holding')}</button>
           <button type="button" class="btn btn-secondary hidden" id="holding-cancel-btn">${buttonLabel('x-circle', 'Cancel')}</button>
         </div>
       </form>
       ${hasAnyAsset ? '' : '<p class="hint">No stocks, bonds or cash assets exist yet. Add some from the Stocks / Bonds / Cash Assets pages first.</p>'}
-      <p class="hint">Tip: use the <a href="#/transactions">Transactions</a> page to record BUY/SELL trades &mdash; quantity and average cost are then updated automatically.</p>
+      <p class="hint">Tip: average cost auto-fills from the selected asset, and the <a href="#/transactions">Transactions</a> page keeps quantity and average cost updated automatically.</p>
     </section>
 
     <section class="card">
@@ -952,16 +950,55 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
   const submitBtn = app.querySelector('#holding-submit-btn');
   const assetTypeSelect = form.elements.assetType;
   const assetIdSelect = form.elements.assetId;
+  const averageCostInput = form.elements.averageCost;
   bindTenthsInput(form.elements.quantity);
+
+  function getAutoAverageCost(assetType, assetId) {
+    const numericAssetId = Number(assetId);
+    if (!assetType || !Number.isFinite(numericAssetId)) return '';
+
+    const buyTransactions = (state.transactions || []).filter((transaction) =>
+      String(transaction.portfolioId) === String(portfolioId)
+      && transaction.assetType === assetType
+      && Number(transaction.assetId) === numericAssetId
+      && transaction.transactionType === 'BUY'
+    );
+
+    if (buyTransactions.length > 0) {
+      const totalQuantity = buyTransactions.reduce((sum, transaction) => sum + Number(transaction.quantity || 0), 0);
+      const totalCost = buyTransactions.reduce(
+        (sum, transaction) => sum + (Number(transaction.quantity || 0) * Number(transaction.price || 0)),
+        0
+      );
+      if (totalQuantity > 0) {
+        return (totalCost / totalQuantity).toFixed(4);
+      }
+    }
+
+    const selectedAsset = assetOptionsFor(assetType).find((item) => Number(item.id) === numericAssetId);
+    if (!selectedAsset) return '';
+    if (assetType === 'STOCK') return selectedAsset.price !== null && selectedAsset.price !== undefined ? String(selectedAsset.price) : '';
+    if (assetType === 'BOND') return selectedAsset.currentPrice !== null && selectedAsset.currentPrice !== undefined ? String(selectedAsset.currentPrice) : '';
+    if (assetType === 'CASH') return selectedAsset.exchangeRate !== null && selectedAsset.exchangeRate !== undefined ? String(selectedAsset.exchangeRate) : '';
+    return '';
+  }
+
+  function syncAverageCost() {
+    // Keep edit flow manual; auto-fill is for Add Holding.
+    if (form.elements.id.value) return;
+    averageCostInput.value = getAutoAverageCost(assetTypeSelect.value, assetIdSelect.value);
+  }
 
   function populateAssetOptions(type, selectedId) {
     if (!type) {
       assetIdSelect.innerHTML = '<option value="">Select asset type first&hellip;</option>';
+      averageCostInput.value = '';
       return;
     }
     const source = type === 'STOCK' ? state.stocks : type === 'BOND' ? state.bonds : state.cashAssets;
     if (source.length === 0) {
       assetIdSelect.innerHTML = '<option value="">No assets available</option>';
+      averageCostInput.value = '';
       return;
     }
     assetIdSelect.innerHTML = source.map((item) => {
@@ -973,9 +1010,12 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
       const selected = selectedId !== undefined && String(item.id) === String(selectedId) ? 'selected' : '';
       return `<option value="${item.id}" ${selected}>${escapeHtml(label)}</option>`;
     }).join('');
+
+    syncAverageCost();
   }
 
   assetTypeSelect.addEventListener('change', () => populateAssetOptions(assetTypeSelect.value));
+  assetIdSelect.addEventListener('change', () => syncAverageCost());
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -1003,6 +1043,7 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
 
   cancelBtn.addEventListener('click', () => {
     resetForm(form, submitBtn, cancelBtn, 'plus-circle', 'Add Holding');
+    averageCostInput.readOnly = true;
     populateAssetOptions('');
   });
 
@@ -1015,6 +1056,7 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
       populateAssetOptions(holding.assetType, holding.assetId);
       form.elements.quantity.value = toTenths(holding.quantity);
       form.elements.averageCost.value = holding.averageCost !== null && holding.averageCost !== undefined ? holding.averageCost : '';      
+      averageCostInput.readOnly = false;
       setButtonLabel(submitBtn, 'pencil-square', 'Update Holding');
       cancelBtn.classList.remove('hidden');
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1033,6 +1075,8 @@ function bindHoldingEvents(app, portfolioId, enrichedHoldings) {
       }
     });
   });
+
+  averageCostInput.readOnly = true;
 }
 
 // ---------------------------------------------------------------------------
