@@ -10,7 +10,10 @@ const state = {
 };
 
 const DASHBOARD_HISTORY_KEY = 'nova.dashboard.history.v1';
+const PORTFOLIO_HISTORY_KEY_PREFIX = 'nova.portfolio.history.v1.';
 let dashboardRefreshTimer = null;
+let portfolioDetailRefreshTimer = null;
+let portfolioDetailRefreshPortfolioId = null;
 let activeRoute = 'home';
 
 // Pre-stored reference data for the Bonds form. These populate <datalist> suggestions for the
@@ -233,6 +236,53 @@ function saveDashboardHistory(history) {
   }
 }
 
+function portfolioHistoryKey(portfolioId) {
+  return `${PORTFOLIO_HISTORY_KEY_PREFIX}${portfolioId}`;
+}
+
+function loadPortfolioHistory(portfolioId) {
+  try {
+    const raw = window.localStorage.getItem(portfolioHistoryKey(portfolioId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed
+          .filter((item) => item && typeof item.value === 'number')
+          .map((item) => ({
+            ts: item.ts || item.label || new Date().toISOString(),
+            value: Math.max(0, Number(item.value) || 0),
+          }))
+      : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function savePortfolioHistory(portfolioId, history) {
+  try {
+    window.localStorage.setItem(portfolioHistoryKey(portfolioId), JSON.stringify(history.slice(-120)));
+  } catch (err) {
+    // ignore storage failures
+  }
+}
+
+function appendPortfolioSnapshot(portfolioId, history, totalValue) {
+  const snapshot = { ts: new Date().toISOString(), value: Math.max(0, Number(totalValue) || 0) };
+  const last = history[history.length - 1];
+  const minuteKey = snapshot.ts.slice(0, 16);
+  if (last && typeof last.ts === 'string' && last.ts.slice(0, 16) === minuteKey) {
+    const nextHistory = [...history.slice(0, -1), snapshot];
+    savePortfolioHistory(portfolioId, nextHistory);
+    return nextHistory;
+  }
+  if (last && Number(last.value) === snapshot.value) {
+    return history;
+  }
+  const nextHistory = [...history, snapshot];
+  savePortfolioHistory(portfolioId, nextHistory);
+  return nextHistory;
+}
+
 let toastTimeoutId;
 function showToast(message, type = 'success') {
   const toast = document.getElementById('toast');
@@ -258,6 +308,14 @@ function stopDashboardRefresh() {
   }
 }
 
+function stopPortfolioDetailRefresh() {
+  if (portfolioDetailRefreshTimer) {
+    clearInterval(portfolioDetailRefreshTimer);
+    portfolioDetailRefreshTimer = null;
+  }
+  portfolioDetailRefreshPortfolioId = null;
+}
+
 function startDashboardRefresh(app) {
   if (dashboardRefreshTimer) return;
   dashboardRefreshTimer = setInterval(() => {
@@ -273,6 +331,18 @@ function buildDashboardTrend(history) {
       value: Number(item.value) || 0,
     }))
     .sort((a, b) => new Date(a.label) - new Date(b.label));
+}
+
+function startPortfolioDetailRefresh(app, portfolioId) {
+  const normalizedId = String(portfolioId);
+  if (portfolioDetailRefreshTimer && portfolioDetailRefreshPortfolioId === normalizedId) return;
+  stopPortfolioDetailRefresh();
+  portfolioDetailRefreshPortfolioId = normalizedId;
+  portfolioDetailRefreshTimer = setInterval(() => {
+    const parts = parseHash();
+    if (parts[0] !== 'portfolios' || parts[1] !== normalizedId) return;
+    renderPortfolioDetailView(app, normalizedId, { silentRefresh: true, skipRefreshTimerSetup: true }).catch((err) => console.error(err));
+  }, 60000);
 }
 
 function renderHomePortfolioCard(portfolio, index) {
@@ -385,6 +455,10 @@ async function router() {
   const section = parts[0] || 'portfolios';
   activeRoute = section;
   updateActiveNav(section);
+
+  if (!(section === 'portfolios' && parts.length >= 2)) {
+    stopPortfolioDetailRefresh();
+  }
 
   try {
     if (section === 'home') {
@@ -623,8 +697,11 @@ function bindPortfoliosEvents(app) {
 // ---------------------------------------------------------------------------
 
 
-async function renderPortfolioDetailView(app, portfolioId) {
-  app.innerHTML = renderLoading();
+async function renderPortfolioDetailView(app, portfolioId, options = {}) {
+  const { silentRefresh = false, skipRefreshTimerSetup = false } = options;
+  if (!silentRefresh) {
+    app.innerHTML = renderLoading();
+  }
 
   const [portfolioSummary, stocks, bonds, cashAssets] = await Promise.all([
     PortfolioApi.summary(portfolioId),
@@ -644,6 +721,8 @@ async function renderPortfolioDetailView(app, portfolioId) {
   const hasPnlData = Boolean(portfolioSummary.hasPnlData);
   const allocation = Array.isArray(portfolioSummary.allocation) ? portfolioSummary.allocation : [];
   const hasAnyAsset = stocks.length + bonds.length + cashAssets.length > 0;
+  const portfolioTrendHistory = appendPortfolioSnapshot(portfolioId, loadPortfolioHistory(portfolioId), totalValue);
+  const portfolioTrendPoints = buildDashboardTrend(portfolioTrendHistory);
 
   app.innerHTML = `
     <div class="page-header">
@@ -653,28 +732,41 @@ async function renderPortfolioDetailView(app, portfolioId) {
       ${portfolio.description ? `<p class="subtitle">${escapeHtml(portfolio.description)}</p>` : ''}
     </div>
 
-    <section class="summary-grid">
-      <div class="card summary-card">
-        <span class="summary-label">Total Market Value</span>
-        <span class="summary-value">${formatMoney(totalValue)}</span>
-      </div>
-      <div class="card summary-card">
-        <span class="summary-label">Unrealized P&amp;L</span>
-        <span class="summary-value ${pnlClass(totalPnl)}">${hasPnlData ? formatSignedMoney(totalPnl) : '&mdash;'}</span>
-      </div>
-      <div class="card summary-card">
-        <span class="summary-label">Holdings</span>
-        <span class="summary-value">${enriched.length}</span>
-      </div>
-      <div class="card chart-card">
-        <span class="summary-label">Allocation by Asset Type</span>
-        <div class="chart-wrap">
-          <canvas id="allocation-chart" width="140" height="140"></canvas>
-          <ul class="legend">
-            ${allocation.length === 0 ? '<li>No data yet</li>' : allocation.map((a) => `<li><span class="legend-swatch" style="background:${a.color}"></span>${a.label}: ${formatMoney(a.value)} (${a.percent}%)</li>`).join('')}
-          </ul>
+    <section class="portfolio-summary-grid">
+      <div class="portfolio-metric-stack">
+        <div class="card summary-card">
+          <span class="summary-label">Total Market Value</span>
+          <span class="summary-value">${formatMoney(totalValue)}</span>
+        </div>
+        <div class="card summary-card">
+          <span class="summary-label">Holdings</span>
+          <span class="summary-value">${enriched.length}</span>
         </div>
       </div>
+
+      <div class="portfolio-metric-stack">
+        <div class="card summary-card">
+          <span class="summary-label">Unrealized P&amp;L</span>
+          <span class="summary-value ${pnlClass(totalPnl)}">${hasPnlData ? formatSignedMoney(totalPnl) : '&mdash;'}</span>
+        </div>
+        <div class="card chart-card">
+          <span class="summary-label">Allocation by Asset Type</span>
+          <div class="chart-wrap">
+            <canvas id="allocation-chart" width="140" height="140"></canvas>
+            <ul class="legend">
+              ${allocation.length === 0 ? '<li>No data yet</li>' : allocation.map((a) => `<li><span class="legend-swatch" style="background:${a.color}"></span>${a.label}: ${formatMoney(a.value)} (${a.percent}%)</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <article class="card chart-card portfolio-line-card">
+        <div class="card-heading-row">
+          <h2>Fund movement</h2>
+          <span class="card-note">Real-time portfolio value trend</span>
+        </div>
+        <canvas id="portfolio-line-chart" width="560" height="280"></canvas>
+      </article>
     </section>
 
     <section class="card">
@@ -748,6 +840,10 @@ async function renderPortfolioDetailView(app, portfolioId) {
   `;
 
   drawAllocationChart(document.getElementById('allocation-chart'), allocation);
+  drawLineChart(document.getElementById('portfolio-line-chart'), portfolioTrendPoints);
+  if (!skipRefreshTimerSetup) {
+    startPortfolioDetailRefresh(app, portfolioId);
+  }
   bindHoldingEvents(app, portfolioId, enriched);
 }
 
