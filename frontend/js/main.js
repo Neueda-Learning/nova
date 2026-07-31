@@ -7,6 +7,7 @@ const state = {
   bonds: [],
   cashAssets: [],
   transactions: [],
+  aiPanelCache: {},
 };
 
 const DASHBOARD_HISTORY_KEY = 'nova.dashboard.history.v1';
@@ -697,31 +698,6 @@ function bindPortfoliosEvents(app) {
 // ---------------------------------------------------------------------------
 
 
-function renderAnomalyItem(anomaly) {
-  const severity = anomaly.severity || 'LOW';
-  const assetType = anomaly.assetType || '';
-  const transactionType = anomaly.transactionType || '';
-  const reasons = Array.isArray(anomaly.reasons) ? anomaly.reasons : [];
-  return `
-    <div class="ai-anomaly-item">
-      <div class="ai-anomaly-head">
-        <span class="badge badge-risk-${severity.toLowerCase()}">${severity}</span>
-        <span class="badge badge-${assetType.toLowerCase()}">${assetType}</span>
-        <span class="badge badge-${transactionType.toLowerCase()}">${transactionType}</span>
-        <span class="ai-anomaly-date">${escapeHtml(anomaly.transactionDate)}</span>
-      </div>
-      ${reasons.length ? `<p class="ai-anomaly-reasons">${escapeHtml(reasons.join('; '))}</p>` : ''}
-    </div>
-  `;
-}
-
-function renderAnomaliesList(anomalies) {
-  if (!anomalies || anomalies.length === 0) {
-    return emptyState('No anomalies detected in recent transactions.');
-  }
-  return anomalies.map(renderAnomalyItem).join('');
-}
-
 function renderAiSourceBadge(source) {
   const isAi = source === 'AI';
   return `<span class="badge badge-source-${isAi ? 'ai' : 'rule'}">${isAi ? 'AI generated' : 'Rule-based'}</span>`;
@@ -733,14 +709,13 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
     app.innerHTML = renderLoading();
   }
 
-  const [portfolioSummary, stocks, bonds, cashAssets, transactions, aiForecast, aiAnomalies] = await Promise.all([
+  const [portfolioSummary, stocks, bonds, cashAssets, transactions, aiForecast] = await Promise.all([
     PortfolioApi.summary(portfolioId),
     StockApi.list(),
     BondApi.list(),
     CashAssetApi.list(),
     TransactionApi.list().catch(() => []),
     AiApi.forecast(portfolioId, 12).catch(() => null),
-    AiApi.anomalies(portfolioId).catch(() => []),
   ]);
 
   state.stocks = stocks;
@@ -760,6 +735,13 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
   const forecastMeta = aiForecast
     ? `Assumed annual return ${aiForecast.assumedAnnualReturnPercent}% &middot; volatility ${aiForecast.assumedAnnualVolatilityPercent}%. ${escapeHtml(aiForecast.disclaimer || '')}`
     : 'Forecast unavailable right now.';
+  // Auto-refresh rebuilds this view every 60s; restore any previously-generated AI results so they don't vanish.
+  const aiCache = state.aiPanelCache[String(portfolioId)] || {};
+  const adviceResultClass = aiCache.advice ? 'ai-result' : 'ai-result-placeholder';
+  const adviceResultHtml = aiCache.advice || 'Click Generate for automated observations about this portfolio.';
+  const summaryResultClass = aiCache.summary ? 'ai-result' : 'ai-result-placeholder';
+  const summaryResultHtml = aiCache.summary || 'Click Generate for a plain-English activity recap.';
+  const queryResultHtml = aiCache.query || '';
 
   app.innerHTML = `
     <div class="page-header">
@@ -828,18 +810,11 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
         </div>
 
         <div class="ai-block">
-          <h3>Anomaly Detection</h3>
-          <div id="ai-anomalies-list">${renderAnomaliesList(aiAnomalies)}</div>
-        </div>
-      </div>
-
-      <div class="ai-panel-grid">
-        <div class="ai-block">
           <div class="ai-block-header">
             <h3>Investment Advice</h3>
             <button type="button" class="btn btn-secondary btn-sm" id="ai-advice-btn">${buttonLabel('plus-circle', 'Generate')}</button>
           </div>
-          <div id="ai-advice-result" class="ai-result-placeholder">Click Generate for automated observations about this portfolio.</div>
+          <div id="ai-advice-result" class="${adviceResultClass}">${adviceResultHtml}</div>
         </div>
 
         <div class="ai-block">
@@ -854,7 +829,7 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
               <button type="button" class="btn btn-secondary btn-sm" id="ai-summary-btn">${buttonLabel('plus-circle', 'Generate')}</button>
             </div>
           </div>
-          <div id="ai-summary-result" class="ai-result-placeholder">Click Generate for a plain-English activity recap.</div>
+          <div id="ai-summary-result" class="${summaryResultClass}">${summaryResultHtml}</div>
         </div>
       </div>
 
@@ -864,7 +839,7 @@ async function renderPortfolioDetailView(app, portfolioId, options = {}) {
           <input type="text" id="ai-query-input" name="question" maxlength="500" placeholder="e.g. What is my biggest holding?" required />
           <button type="submit" class="btn btn-primary btn-sm" id="ai-query-btn">${buttonLabel('plus-circle', 'Ask')}</button>
         </form>
-        <div id="ai-query-result"></div>
+        <div id="ai-query-result">${queryResultHtml}</div>
       </div>
     </section>
 
@@ -1113,6 +1088,7 @@ async function generateAiAdvice(app, portfolioId, button) {
       ${signals.length ? `<ul class="ai-signal-list">${signals.map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>` : ''}
       <p class="card-note">${escapeHtml(advice.disclaimer || '')}</p>
     `;
+    state.aiPanelCache[String(portfolioId)] = { ...state.aiPanelCache[String(portfolioId)], advice: resultEl.innerHTML };
   } catch (err) {
     showToast(err.message || 'Failed to generate advice', 'error');
   } finally {
@@ -1137,6 +1113,7 @@ async function generateAiSummary(app, portfolioId, button, daysSelect) {
       <p>${escapeHtml(summary.summary)}</p>
       <p class="card-note">Net cash flow: <span class="${pnlClass(summary.netCashFlow)}">${formatSignedMoney(summary.netCashFlow)}</span>${summary.mostActiveAsset ? ` &middot; Most active: ${escapeHtml(summary.mostActiveAsset)}` : ''}</p>
     `;
+    state.aiPanelCache[String(portfolioId)] = { ...state.aiPanelCache[String(portfolioId)], summary: resultEl.innerHTML };
   } catch (err) {
     showToast(err.message || 'Failed to generate summary', 'error');
   } finally {
@@ -1162,8 +1139,10 @@ async function submitAiQuery(app, portfolioId, form) {
       </div>
     `;
     input.value = '';
+    state.aiPanelCache[String(portfolioId)] = { ...state.aiPanelCache[String(portfolioId)], query: resultEl.innerHTML };
   } catch (err) {
     resultEl.innerHTML = `<p class="card-note">${escapeHtml(err.message || 'Failed to answer question')}</p>`;
+    state.aiPanelCache[String(portfolioId)] = { ...state.aiPanelCache[String(portfolioId)], query: resultEl.innerHTML };
     showToast(err.message || 'Failed to answer question', 'error');
   } finally {
     setButtonLabel(button, 'plus-circle', 'Ask');

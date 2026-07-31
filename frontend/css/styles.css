@@ -1135,31 +1135,6 @@ tbody tr:hover {
   color: #334155;
 }
 
-.ai-anomaly-item {
-  padding: 10px 0;
-  border-bottom: 1px solid var(--color-border);
-}
-.ai-anomaly-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-.ai-anomaly-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.ai-anomaly-date {
-  color: var(--color-muted);
-  font-size: 0.82rem;
-  margin-left: auto;
-}
-.ai-anomaly-reasons {
-  margin: 6px 0 0;
-  font-size: 0.85rem;
-  color: var(--color-text);
-}
-
 .ai-query-form {
   display: flex;
   gap: 10px;

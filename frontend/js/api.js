@@ -108,7 +108,6 @@ const AiApi = {
   advice: (portfolioId) => apiRequest(`/ai/portfolios/${portfolioId}/advice`),
   forecast: (portfolioId, horizonMonths = 12) =>
     apiRequest(`/ai/portfolios/${portfolioId}/forecast?horizonMonths=${encodeURIComponent(horizonMonths)}`),
-  anomalies: (portfolioId) => apiRequest(`/ai/portfolios/${portfolioId}/anomalies`),
   summary: (portfolioId, days = 30) =>
     apiRequest(`/ai/portfolios/${portfolioId}/summary?days=${encodeURIComponent(days)}`),
   query: (portfolioId, question) =>
